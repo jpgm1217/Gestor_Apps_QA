@@ -9,7 +9,7 @@
 <title>CréditoRápido — Cobrador</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#080f0d;--bg2:#0f1a15;--bg3:#172218;--bg4:#1f2e21;--card:#101a12;--border:rgba(255,255,255,0.07);--border2:rgba(255,255,255,0.13);--green:#3de89a;--green2:#6ffab6;--greend:rgba(61,232,154,0.12);--greenb:rgba(61,232,154,0.25);--gold:#f0c060;--goldd:rgba(240,192,96,0.1);--red:#ff6b6b;--redd:rgba(255,107,107,0.12);--amber:#ffaa44;--amberd:rgba(255,170,68,0.12);--blue:#6eb3ff;--blued:rgba(110,179,255,0.12);--text:#e8f5ee;--text2:#7aaa8e;--text3:#446655;--r:14px;--rs:10px;}
+:root{--bg:#080809;--bg2:#0f1013;--bg3:#17191f;--bg4:#1f2330;--card:#131518;--border:rgba(255,255,255,0.065);--border2:rgba(255,255,255,0.12);--green:#3de89a;--green2:#6ffab6;--greend:rgba(61,232,154,0.11);--greenb:rgba(61,232,154,0.24);--gold:#f0c060;--goldd:rgba(240,192,96,0.1);--red:#ff6b6b;--redd:rgba(255,107,107,0.11);--amber:#ffaa44;--amberd:rgba(255,170,68,0.11);--blue:#6eb3ff;--blued:rgba(110,179,255,0.11);--text:#e8f5ee;--text2:#7aaa8e;--text3:#446655;--r:14px;--rs:10px;}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{height:100%;overflow:hidden;}
 body{background:var(--bg);color:var(--text);font-family:'Instrument Sans',sans-serif;font-size:14px;display:flex;flex-direction:column;position:relative;}
@@ -33,9 +33,11 @@ body{background:var(--bg);color:var(--text);font-family:'Instrument Sans',sans-s
 .live-dot{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--green);}
 .dot{width:7px;height:7px;border-radius:50%;background:var(--green);animation:pulse 2s infinite;}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(61,232,154,.5);}50%{box-shadow:0 0 0 5px rgba(61,232,154,0);}}
-.tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;}
-.tab{flex:1;padding:10px 4px;font-size:11px;font-weight:500;color:var(--text3);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;font-family:'Instrument Sans',sans-serif;}
-.tab.active{color:var(--green);border-bottom-color:var(--green);}
+.tabs{display:flex;gap:8px;background:var(--bg2);border-bottom:1px solid var(--border);flex-shrink:0;overflow-x:auto;scrollbar-width:none;padding:8px 10px 0;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab .ti{opacity:.9;margin-right:4px;font-size:12px;}
+.tab{flex:1;min-width:76px;padding:10px 8px;font-size:11px;font-weight:600;color:var(--text3);border:1px solid transparent;background:transparent;cursor:pointer;border-bottom:2px solid transparent;transition:all .2s;font-family:'Instrument Sans',sans-serif;white-space:nowrap;border-radius:12px 12px 0 0;}
+.tab.active{color:var(--green);border:1px solid var(--border);border-bottom-color:var(--card);background:var(--card);box-shadow:inset 0 2px 0 0 var(--green);}
 .scroll{flex:1;overflow-y:auto;padding:14px;scrollbar-width:thin;scrollbar-color:var(--bg4) transparent;}
 .panel{display:none;}
 .panel.active{display:block;animation:fi .2s ease;}
@@ -116,10 +118,21 @@ input:focus{border-color:var(--green);}
 .preview-value{font-family:'Syne',sans-serif;font-size:18px;color:var(--gold);font-weight:700;}
 .preview-sub{font-size:10px;color:var(--text3);margin-top:4px;}
 </style>
+<script>
+const ICON_SVG = {
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  calendar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>',
+  alertTriangle: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l10 18H2L12 2z"/><path d="M12 9v4m0 4h.01"/></svg>',
+  trendingUp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13 16 8 11 2 17"/><polyline points="23 6 23 12 17 12"/></svg>',
+  map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15 10 23 10 17 16 19 24 12 19 5 24 7 16 1 10 9 10"/></svg>',
+  calculator: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="2" width="16" height="20" rx="2"/><line x1="8" y1="6" x2="16" y2="6"/><rect x="8" y="9" width="2" height="2"/><rect x="14" y="9" width="2" height="2"/><rect x="8" y="13" width="2" height="2"/><rect x="14" y="13" width="2" height="2"/><rect x="8" y="17" width="8" height="2"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m5.08 5.08l4.24 4.24M1 12h6m6 0h6M4.22 19.78l4.24-4.24m5.08-5.08l4.24-4.24"/></svg>',
+};
+function renderIcons(){document.querySelectorAll('.ti[data-icon]').forEach(el=>{const svg=ICON_SVG[el.getAttribute('data-icon')];if(svg){el.innerHTML=svg;el.style.display='inline-block';el.style.width='14px';el.style.height='14px';el.style.marginRight='5px';el.style.verticalAlign='middle';}});
+document.readyState==='loading'?document.addEventListener('DOMContentLoaded',renderIcons):renderIcons();
+</script>
 </head>
 <body>
-<div style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#ff6b00;color:#fff;text-align:center;font-size:12px;font-weight:700;padding:5px;letter-spacing:.1em">⚠️ AMBIENTE QA — NO ES PRODUCCIÓN ⚠️</div>
-<div style="height:28px;flex-shrink:0"></div>
 
 <div class="pin-screen" id="pin-screen">
   <div class="pin-logo">CréditoRápido</div>
@@ -138,26 +151,42 @@ input:focus{border-color:var(--green);}
 </div>
 
 <div class="header">
-  <div><div class="app-name">CréditoRápido</div><div class="app-role">📍 Cobrador</div></div>
-  <div class="live-dot"><div class="dot" id="dot"></div><span id="conn-status">Conectando...</span></div>
+  <div>
+    <div class="app-name">CréditoRápido</div>
+    <div class="app-role" id="header-cobrador">📍 Cobrador</div>
+  </div>
+  <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px">
+    <div class="live-dot"><div class="dot" id="dot"></div><span id="conn-status">Conectando...</span></div>
+    <div id="header-progreso" style="font-size:10px;color:var(--text3);letter-spacing:.04em">— / — cobros</div>
+  </div>
 </div>
 
 <div class="tabs">
-  <button class="tab active" onclick="goTab('ruta',this)">Mi ruta</button>
-  <button class="tab" onclick="goTab('todos',this)">Todos</button>
-  <button class="tab" onclick="goTab('dia',this)">Mi día</button>
-  <button class="tab" onclick="goTab('ganancias',this)">💰 Mis ganancias</button>
-  <button class="tab" onclick="goTab('nuevo',this)" style="color:var(--green)">Solicitudes</button>
-  <button class="tab" onclick="goTab('config',this)">Config</button>
-  <button class="tab" onclick="goTab('simulador',this)">📊 Simular</button>
+  <button class="tab active" onclick="goTab('ruta',this)" id="tab-ruta"><span class="ti" data-icon="map"></span>Mi ruta <span id="badge-ruta" style="display:none;background:var(--amber);color:#000;border-radius:999px;font-size:10px;padding:1px 6px;margin-left:3px">0</span></button>
+  <button class="tab" onclick="goTab('todos',this)"><span class="ti" data-icon="users"></span>Todos</button>
+  <button class="tab" onclick="goTab('dia',this)"><span class="ti" data-icon="calendar"></span>Mi día</button>
+  <button class="tab" onclick="goTab('ganancias',this)"><span class="ti" data-icon="trendingUp"></span>Ganancias</button>
+  <button class="tab" onclick="goTab('nuevo',this)" id="tab-solicitudes"><span class="ti" data-icon="alertTriangle"></span>Solicitudes <span id="badge-soli" style="display:none;background:var(--red);color:#fff;border-radius:999px;font-size:10px;padding:1px 6px;margin-left:3px">0</span></button>
+  <button class="tab" onclick="goTab('simulador',this)"><span class="ti" data-icon="calculator"></span>Simular</button>
+  <button class="tab" onclick="goTab('config',this)"><span class="ti" data-icon="settings"></span>Config</button>
 </div>
 
 <div class="scroll">
 
 <div id="panel-ruta" class="panel active">
-  <div class="g2">
+  <!-- Resumen de inicio -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
     <div class="metric green"><div class="ml">Por cobrar hoy</div><div class="mv" id="r-pendiente">$0</div></div>
     <div class="metric"><div class="ml">Cobrado hoy</div><div class="mv" style="color:var(--green)" id="r-cobrado">$0</div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+    <div class="metric"><div class="ml">Pendientes</div><div class="mv" style="font-size:16px" id="r-count-pend">—</div></div>
+    <div class="metric"><div class="ml">Cobrados</div><div class="mv" style="font-size:16px;color:var(--green)" id="r-count-cob">—</div></div>
+    <div class="metric"><div class="ml">Con mora</div><div class="mv" style="font-size:16px;color:var(--red)" id="r-count-mora">—</div></div>
+  </div>
+  <div style="margin-bottom:12px">
+    <div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px" id="r-pct-label">Progreso 0%</div>
+    <div class="prog"><div class="prog-f" id="r-prog-bar" style="width:0%"></div></div>
   </div>
   <div id="lista-ruta"></div>
 </div>
@@ -228,8 +257,34 @@ input:focus{border-color:var(--green);}
   </div>
 </div>
 
+<!-- SIMULADOR -->
+<div id="panel-simulador" class="panel">
+  <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Simula un crédito para cotizar al cliente. Verás la tabla de cuotas con fechas de pago.</div>
+  <div class="card">
+    <div class="ct">Parámetros de Simulación</div>
+    <div class="fg"><label class="fl">Monto ($)</label><input type="number" id="sim-monto" placeholder="100000" min="1" oninput="simularCredito()"></div>
+    <div class="fg"><label class="fl">Tasa de interés (%)</label><input type="number" id="sim-tasa" placeholder="20" min="1" max="100" value="20" oninput="simularCredito()"></div>
+    <div class="fg"><label class="fl">Frecuencia de pago</label>
+      <select id="sim-frecuencia" oninput="simularCredito()">
+        <option value="diario">Diario</option>
+        <option value="semanal">Semanal</option>
+        <option value="quincenal">Quincenal</option>
+        <option value="mensual">Mensual</option>
+      </select>
+    </div>
+    <div class="fg"><label class="fl">Nº de cuotas</label><input type="number" id="sim-plazo" placeholder="10" min="1" max="365" oninput="simularCredito()"></div>
+    <div class="fg"><label class="fl">Mora por día ($) <span style="color:var(--text3);font-weight:400">(opcional)</span></label><input type="number" id="sim-mora" placeholder="3000" min="0" step="1000"></div>
+  </div>
+  <div id="sim-resultado"></div>
+</div>
+
 <div id="panel-config" class="panel">
   <div class="card">
+    <div class="ct">Mi perfil</div>
+    <div class="fg"><label class="fl">Mi nombre</label><input type="text" id="cfg-nombre" placeholder="Ej: Juan Pérez" maxlength="40"></div>
+    <button class="btn btn-primary" onclick="guardarNombre()">💾 Guardar nombre</button>
+  </div>
+  <div class="card" style="margin-top:12px">
     <div class="ct">Mi PIN</div>
     <div class="fg"><label class="fl">Nuevo PIN (4 dígitos)</label><input type="password" id="cfg-pin1" maxlength="4" placeholder="****"></div>
     <div class="fg"><label class="fl">Confirmar PIN</label><input type="password" id="cfg-pin2" maxlength="4" placeholder="****"></div>
@@ -256,27 +311,6 @@ input:focus{border-color:var(--green);}
       <div>🔒 No puede modificar montos</div>
     </div>
   </div>
-</div>
-
-<!-- SIMULADOR -->
-<div id="panel-simulador" class="panel">
-  <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Simula un crédito para cotizar al cliente. Verás la tabla de cuotas con fechas de pago.</div>
-  <div class="card">
-    <div class="ct">Parámetros de Simulación</div>
-    <div class="fg"><label class="fl">Monto ($)</label><input type="number" id="sim-monto" placeholder="100000" min="1" oninput="simularCredito()"></div>
-    <div class="fg"><label class="fl">Tasa de interés (%)</label><input type="number" id="sim-tasa" placeholder="20" min="1" max="100" value="20" oninput="simularCredito()"></div>
-    <div class="fg"><label class="fl">Frecuencia de pago</label>
-      <select id="sim-frecuencia" oninput="simularCredito()">
-        <option value="diario">Diario</option>
-        <option value="semanal">Semanal</option>
-        <option value="quincenal">Quincenal</option>
-        <option value="mensual">Mensual</option>
-      </select>
-    </div>
-    <div class="fg"><label class="fl">Nº de cuotas</label><input type="number" id="sim-plazo" placeholder="10" min="1" max="365" oninput="simularCredito()"></div>
-    <div class="fg"><label class="fl">Mora por día ($) <span style="color:var(--text3);font-weight:400">(opcional)</span></label><input type="number" id="sim-mora" placeholder="3000" min="0" step="1000"></div>
-  </div>
-  <div id="sim-resultado"></div>
 </div>
 
 </div>
@@ -333,12 +367,36 @@ input:focus{border-color:var(--green);}
   <a id="wa-recibo" href="#" target="_blank" class="success-wa">💬 Enviar recibo por WhatsApp</a>
 </div>
 
+<!-- MODAL ÚLTIMA CUOTA -->
+<div class="confirm-overlay" id="ultima-cuota-overlay">
+  <div class="confirm-box" style="width:100%;max-width:340px;text-align:center">
+    <div style="font-size:36px;margin-bottom:8px">🎉</div>
+    <div class="confirm-title" style="color:var(--green)">¡Préstamo completado!</div>
+    <div class="confirm-name" id="ultima-cuota-nombre">—</div>
+    <div style="font-size:12px;color:var(--text3);margin:10px 0">¿Qué deseas hacer con este cliente?</div>
+    <div class="confirm-btns" style="flex-direction:column;gap:8px">
+      <button class="confirm-yes" style="background:var(--green);width:100%;color:#080f0d" onclick="solicitarRenovacion()">🔄 Solicitar nuevo ciclo al admin</button>
+      <button class="confirm-no" style="width:100%" onclick="cerrarUltimaCuota()">✅ Cerrar préstamo</button>
+    </div>
+  </div>
+</div>
+
+<!-- NOTIF SOLICITUD RESPONDIDA -->
+<div class="confirm-overlay" id="soli-resp-overlay">
+  <div class="confirm-box" style="width:100%;max-width:340px;text-align:center">
+    <div style="font-size:30px;margin-bottom:8px" id="soli-resp-icon">📬</div>
+    <div class="confirm-title" id="soli-resp-titulo">Respuesta del admin</div>
+    <div class="confirm-name" id="soli-resp-msg">—</div>
+    <button class="confirm-yes" style="margin-top:16px;width:100%;background:var(--green);color:#080f0d" onclick="document.getElementById('soli-resp-overlay').classList.remove('open')">OK</button>
+  </div>
+</div>
+
 <div class="notif" id="notif"></div>
 
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
-const FB={apiKey:"AIzaSyC64ZC22ew28ELjjM6Sg1p6_ECKEyOBliA",authDomain:"prestamosjv-qa.firebaseapp.com",projectId:"prestamosjv-qa",databaseURL:"https://prestamosjv-qa-default-rtdb.firebaseio.com",storageBucket:"prestamosjv-qa.firebasestorage.app",messagingSenderId:"377793551607",appId:"1:377793551607:web:c149c8a35e118a800f87f2"};
+const FB={apiKey:"AIzaSyCxSzLh5EDpwZX4ppS4tFz8hnI9FlmgbIw",authDomain:"prestamosjv.firebaseapp.com",projectId:"prestamosjv",databaseURL:"https://prestamosjv-default-rtdb.firebaseio.com",storageBucket:"prestamosjv.appspot.com",messagingSenderId:"000000000000",appId:"1:000:web:000"};
 let db=null,fbOk=false,clientes=[],cobrosHoy=[],pendingPago=null,liquidaciones=[];
 const PIN_KEY='cr_pin_cobrador';
 let pinBuf='',pinMode='check';
@@ -404,7 +462,6 @@ function setConn(ok){
   document.getElementById('cfg-estado').textContent=ok?'Conectado ✓':'Sin conexión';
   document.getElementById('cfg-estado').style.color=ok?'var(--green)':'var(--red)';
 }
-
 // ── SIMULADOR ──
 const SIM_DIAS={diario:1,semanal:7,quincenal:15,mensual:30};
 
@@ -458,6 +515,7 @@ function simularCredito(){
   }
   el.innerHTML=html;
 }
+
 const WA_TEMPLATE_KEY='cr_wa_template';
 const WA_TEMPLATE_DEFAULT=`✅ *Recibo de pago*
 
@@ -500,8 +558,21 @@ function escuchar(){
   // Escuchar solicitudes de este cobrador
   db.ref('solicitudes').orderByChild('autor').equalTo('Cobrador').on('value',s=>{
     const d=s.val();
-    window._misSolicitudes=d?Object.values(d):[];
+    const nuevas=d?Object.values(d):[];
+    const anteriores=window._misSolicitudes||[];
+    // Detectar solicitudes que cambiaron de pendiente a respondida
+    nuevas.forEach(soli=>{
+      const ant=anteriores.find(x=>x.id===soli.id);
+      if(ant&&ant.estado==='pendiente'&&soli.estado!=='pendiente'){
+        mostrarRespuestaSolicitud(soli);
+      }
+    });
+    window._misSolicitudes=nuevas;
     renderSolicitudes();
+    // Badge en tab
+    const pendientes=window._misSolicitudes.filter(x=>x.estado==='pendiente').length;
+    const badge=document.getElementById('badge-soli');
+    if(badge){badge.textContent=pendientes;badge.style.display=pendientes>0?'inline':'none';}
   });
   // Escuchar plantilla WA desde Firebase
   db.ref('config/waTemplate').on('value',s=>{
@@ -524,6 +595,7 @@ window.onload=()=>{
   const h=hoy();
   cobrosHoy=JSON.parse(localStorage.getItem('cobros_hoy')||'[]').filter(c=>c.fecha===h);
   localStorage.setItem('cobros_hoy',JSON.stringify(cobrosHoy));
+  actualizarHeaderNombre();
   initPIN();
 };
 
@@ -947,15 +1019,30 @@ function cerrarClienteDetalle(){document.getElementById('cliente-overlay').class
 function renderRuta(){
   const h=hoy();
   const ruta=clientes.filter(c=>c.cuotasData?.some(q=>q.fechaISO===h&&q.num>c.pagadas));
-  let pendiente=0,cobrado=0;
+  let pendiente=0,cobrado=0,countPend=0,countCob=0,countMora=0;
   ruta.forEach(c=>{
     const p=c.ultimoPago?.startsWith(h);
     const m=mora(c);
-    if(p)cobrado+=c.cuota;
-    else pendiente+=c.cuota+m;
+    if(p){cobrado+=c.cuota;countCob++;}
+    else{pendiente+=c.cuota+m;countPend++;}
+    if(m>0&&!p)countMora++;
   });
   document.getElementById('r-pendiente').textContent=fmt(pendiente);
   document.getElementById('r-cobrado').textContent=fmt(cobrado);
+  // Nuevas métricas
+  const total=ruta.length;
+  const pct=total?Math.round(countCob/total*100):0;
+  document.getElementById('r-count-pend').textContent=countPend;
+  document.getElementById('r-count-cob').textContent=countCob;
+  document.getElementById('r-count-mora').textContent=countMora;
+  document.getElementById('r-pct-label').textContent='Progreso '+pct+'%';
+  document.getElementById('r-prog-bar').style.width=pct+'%';
+  // Badge tab
+  const badge=document.getElementById('badge-ruta');
+  if(badge){badge.textContent=countPend;badge.style.display=countPend>0?'inline':'none';}
+  // Header progreso
+  const hp=document.getElementById('header-progreso');
+  if(hp)hp.textContent=countCob+' / '+total+' cobros hoy';
   const el=document.getElementById('lista-ruta');
   if(!ruta.length){el.innerHTML='<div class="empty"><div class="empty-i">🎉</div><div class="empty-t">Sin cobros para hoy</div></div>';return;}
   const ord=[...ruta].sort((a,b)=>(a.ultimoPago?.startsWith(h)?1:0)-(b.ultimoPago?.startsWith(h)?1:0));
@@ -990,7 +1077,7 @@ function renderRuta(){
       </button>
       ${!yp&&!noPagoHoy?`
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px">
-          <button onclick="solicitarAbonoCliente('${c.id}')" style="padding:9px;background:transparent;border:1px solid var(--amber);color:var(--amber);border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">💵 Solicitar abono</button>
+          <button onclick="abrirAbonoCobrador('${c.id}')" style="padding:9px;background:transparent;border:1px solid var(--amber);color:var(--amber);border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">💵 Solicitar abono</button>
           <button onclick="registrarNoPagoCobrador('${c.id}')" style="padding:9px;background:transparent;border:1px solid var(--red);color:var(--red);border-radius:10px;font-size:12px;font-weight:600;cursor:pointer">❌ No pagó</button>
         </div>`:''}
       ${yp&&(c.abonoPendiente||0)>0?`<div style="font-size:11px;color:var(--amber);text-align:center;margin-top:6px">💵 Abono parcial registrado hoy</div>`:''}
@@ -1140,7 +1227,11 @@ async function confirmarAbonoCobrador(){
       document.getElementById('wa-recibo').style.display=c.telefono?'inline-flex':'none';
       document.getElementById('success-sub').textContent=`${c.nombre} · ${fmt(v)}`;
       document.getElementById('success-overlay').classList.add('open');
-      setTimeout(()=>document.getElementById('success-overlay').classList.remove('open'),3000);
+      if(navigator.vibrate)navigator.vibrate([80,40,80]);
+      setTimeout(()=>{
+        document.getElementById('success-overlay').classList.remove('open');
+        if(c.pagadas>=c.numCuotas) mostrarModalUltimaCuota(c.id);
+      },2500);
       renderRuta();renderTodos();renderDia();
     }catch(e){
       console.error(e);notify('Error al registrar','err');
@@ -1223,7 +1314,11 @@ async function confirmarPago(){
     document.getElementById('success-sub').textContent=`${c.nombre} · ${fmt(total)}`;
     const so=document.getElementById('success-overlay');
     so.classList.add('open');
-    setTimeout(()=>so.classList.remove('open'),3000);
+    if(navigator.vibrate)navigator.vibrate([80,40,80]);
+    setTimeout(()=>{
+      so.classList.remove('open');
+      if(c.pagadas>=c.numCuotas) mostrarModalUltimaCuota(c.id);
+    },2500);
     renderRuta();renderTodos();renderDia();
   }catch(e){
     console.error(e);notify('Error al registrar','err');
@@ -1335,11 +1430,99 @@ function renderDia(){
 // UTILS
 function fmt(n){return'$'+Math.round(n||0).toLocaleString('es-CO');}
 function hoy(){return new Date().toISOString().split('T')[0];}
+const NOMBRE_KEY='cr_cobrador_nombre';
+function guardarNombre(){
+  const v=document.getElementById('cfg-nombre').value.trim();
+  if(!v){notify('Escribe tu nombre primero','err');return;}
+  localStorage.setItem(NOMBRE_KEY,v);
+  actualizarHeaderNombre();
+  notify('Nombre guardado ✓','ok');
+}
+function actualizarHeaderNombre(){
+  const n=localStorage.getItem(NOMBRE_KEY);
+  const el=document.getElementById('header-cobrador');
+  if(el)el.textContent='📍 '+(n||'Cobrador');
+  const inp=document.getElementById('cfg-nombre');
+  if(inp&&n)inp.value=n;
+}
 let _nt;
 function notify(msg,type){
   const el=document.getElementById('notif');
   el.textContent=msg;el.className='notif '+type+' show';
   clearTimeout(_nt);_nt=setTimeout(()=>el.classList.remove('show'),3000);
+}
+
+// ══════════════════════════════════════════════
+// ÚLTIMA CUOTA — modal cobrador
+// ══════════════════════════════════════════════
+let _clienteUltimaCuota=null;
+
+function mostrarModalUltimaCuota(clienteId){
+  const c=clientes.find(x=>x.id===clienteId);
+  if(!c)return;
+  _clienteUltimaCuota=clienteId;
+  document.getElementById('ultima-cuota-nombre').textContent=c.nombre;
+  document.getElementById('ultima-cuota-overlay').classList.add('open');
+}
+
+function cerrarUltimaCuota(){
+  document.getElementById('ultima-cuota-overlay').classList.remove('open');
+  _clienteUltimaCuota=null;
+  notify('Préstamo cerrado ✓','ok');
+}
+
+function solicitarRenovacion(){
+  if(!_clienteUltimaCuota){cerrarUltimaCuota();return;}
+  const c=clientes.find(x=>x.id===_clienteUltimaCuota);
+  if(!c){cerrarUltimaCuota();return;}
+  if(!fbOk||!db){notify('Sin conexión','err');return;}
+  const yaExiste=(window._misSolicitudes||[]).find(
+    x=>x.clienteId===c.id&&x.tipoSolicitud==='renovacion'&&x.estado==='pendiente'
+  );
+  if(yaExiste){
+    notify('Ya hay una solicitud de renovación pendiente','err');
+    document.getElementById('ultima-cuota-overlay').classList.remove('open');
+    _clienteUltimaCuota=null;
+    return;
+  }
+  const soli={
+    id:'soli_'+Date.now(),
+    tipoSolicitud:'renovacion',
+    clienteId:c.id,
+    clienteNombre:c.nombre,
+    nombre:c.nombre,
+    cedula:c.cedula||'',
+    telefono:c.telefono||'',
+    negocio:c.negocio||'',
+    capitalSolicitado:c.capital||0,
+    notas:`Ciclo ${((c.ciclos||[]).length)+1} completado. Solicitud de nuevo ciclo.`,
+    estado:'pendiente',
+    autor:'Cobrador',
+    fecha:new Date().toISOString(),
+    ts:Date.now()
+  };
+  db.ref('solicitudes/'+soli.id).set(soli)
+    .then(()=>notify('Solicitud de renovación enviada al admin ✓','ok'))
+    .catch(()=>notify('Error al enviar solicitud','err'));
+  document.getElementById('ultima-cuota-overlay').classList.remove('open');
+  _clienteUltimaCuota=null;
+}
+
+// ══════════════════════════════════════════════
+// NOTIFICACIÓN RESPUESTA DE SOLICITUD
+// ══════════════════════════════════════════════
+function mostrarRespuestaSolicitud(soli){
+  const aprobada=soli.estado==='aprobado';
+  const info=tipoSolicitudInfo(tipoSolicitudDe(soli));
+  document.getElementById('soli-resp-icon').textContent=aprobada?'✅':'❌';
+  document.getElementById('soli-resp-titulo').textContent=aprobada?'¡Solicitud aprobada!':'Solicitud rechazada';
+  const nombre=soli.clienteNombre||soli.nombre||'Cliente';
+  const msg=aprobada
+    ?`${info.icon} ${info.label} de ${nombre} fue aprobada por el admin.`
+    :`${info.icon} ${info.label} de ${nombre} fue rechazada.${soli.notaAdmin?' Motivo: '+soli.notaAdmin:''}`;
+  document.getElementById('soli-resp-msg').textContent=msg;
+  document.getElementById('soli-resp-overlay').classList.add('open');
+  try{if(navigator.vibrate)navigator.vibrate([100,50,100]);}catch(e){}
 }
 </script>
 </body>
