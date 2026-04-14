@@ -118,6 +118,8 @@ input:focus{border-color:var(--green);}
 </style>
 </head>
 <body>
+<div style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#ff6b00;color:#fff;text-align:center;font-size:12px;font-weight:700;padding:5px;letter-spacing:.1em">⚠️ AMBIENTE QA — NO ES PRODUCCIÓN ⚠️</div>
+<div style="height:28px;flex-shrink:0"></div>
 
 <div class="pin-screen" id="pin-screen">
   <div class="pin-logo">CréditoRápido</div>
@@ -336,7 +338,7 @@ input:focus{border-color:var(--green);}
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
-const FB={apiKey:"AIzaSyCxSzLh5EDpwZX4ppS4tFz8hnI9FlmgbIw",authDomain:"prestamosjv.firebaseapp.com",projectId:"prestamosjv",databaseURL:"https://prestamosjv-default-rtdb.firebaseio.com",storageBucket:"prestamosjv.appspot.com",messagingSenderId:"000000000000",appId:"1:000:web:000"};
+const FB={apiKey:"AIzaSyC64ZC22ew28ELjjM6Sg1p6_ECKEyOBliA",authDomain:"prestamosjv-qa.firebaseapp.com",projectId:"prestamosjv-qa",databaseURL:"https://prestamosjv-qa-default-rtdb.firebaseio.com",storageBucket:"prestamosjv-qa.firebasestorage.app",messagingSenderId:"377793551607",appId:"1:377793551607:web:c149c8a35e118a800f87f2"};
 let db=null,fbOk=false,clientes=[],cobrosHoy=[],pendingPago=null,liquidaciones=[];
 const PIN_KEY='cr_pin_cobrador';
 let pinBuf='',pinMode='check';

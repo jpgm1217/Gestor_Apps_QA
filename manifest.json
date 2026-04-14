@@ -1,13 +1,13 @@
 {
-  "name": "Gomez Hub",
-  "short_name": "Gomez Hub",
+  "name": "Gomez Hub QA",
+  "short_name": "Hub QA",
   "description": "Sistema personal de finanzas y negocios",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#080808",
-  "theme_color": "#080808",
+  "theme_color": "#ff6b00",
   "icons": [
     {
       "src": "assets/icon-192.png",
