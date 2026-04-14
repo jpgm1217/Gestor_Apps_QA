@@ -7,8 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 :root {
-  --bg: #0f0f0f; --s1: #1a1a1a; --s2: #212121; --s3: #282828;
-  --bd: #2c2c2c; --bd2: #3a3a3a; --bd3: #484848;
+  --bg: #080809; --s1: #0f1013; --s2: #17191f; --s3: #1f2330;
+  --bd: #282a35; --bd2: #323540; --bd3: #3d4250;
   --tx: #f0ede8; --t2: #7a7570; --t3: #484440;
   --ac: #c8f060; --acd: #9abe3a; --ac2: rgba(200,240,96,.08);
   --re: #ff6060; --re2: rgba(255,96,96,.1);
@@ -109,7 +109,8 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
 /* ─── TABS ─── */
 .tabs { display: flex; gap: 2px; margin-bottom: 1.1rem; background: var(--s1); border-radius: var(--rl); padding: 4px; overflow-x: auto; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
-.tab { font-size: 12px; font-weight: 400; padding: 7px 12px; border: none; background: transparent; cursor: pointer; color: var(--t2); border-radius: 8px; white-space: nowrap; flex-shrink: 0; transition: all .15s; font-family: 'DM Sans', sans-serif; }
+.tab { font-size: 12px; font-weight: 400; padding: 7px 12px; border: none; background: transparent; cursor: pointer; color: var(--t2); border-radius: 8px; white-space: nowrap; flex-shrink: 0; transition: all .15s; font-family: 'DM Sans', sans-serif; display: flex; align-items: center; gap: 5px; }
+.tab .ti { display: inline-block; width: 14px; height: 14px; margin: 0; }
 .tab:hover { color: var(--tx); }
 .tab.on { background: var(--s2); color: var(--tx); font-weight: 500; }
 
@@ -240,6 +241,18 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
   .fg.f3 { grid-template-columns: 1fr 1fr; }
 }
 </style>
+<script>
+const ICON_SVG = {
+  barChart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="12" width="4" height="8"/><rect x="10" y="6" width="4" height="14"/><rect x="17" y="2" width="4" height="18"/></svg>',
+  creditCard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M2 8h20"/></svg>',
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  wrench: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 1 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>',
+  file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="13" x2="12" y2="17"/><line x1="10" y1="15" x2="14" y2="15"/></svg>',
+  settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6M4.22 4.22l4.24 4.24m5.08 5.08l4.24 4.24M1 12h6m6 0h6M4.22 19.78l4.24-4.24m5.08-5.08l4.24-4.24"/></svg>',
+};
+function renderIcons(){document.querySelectorAll('.ti[data-icon]').forEach(el=>{const svg=ICON_SVG[el.getAttribute('data-icon')];if(svg){el.innerHTML=svg;el.style.display='inline-block';el.style.verticalAlign='middle';}});
+document.readyState==='loading'?document.addEventListener('DOMContentLoaded',renderIcons):renderIcons();
+</script>
 </head>
 <body>
 
@@ -266,12 +279,12 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
   </div>
 
   <div class="tabs">
-    <button class="tab on" onclick="go('dash')">Panel</button>
-    <button class="tab" onclick="go('liq')">Liquidación</button>
-    <button class="tab" onclick="go('cond')">Conductores</button>
-    <button class="tab" onclick="go('mant')">Mantenimiento</button>
-    <button class="tab" onclick="go('rep')">Reportes</button>
-    <button class="tab" onclick="go('aj')">Ajustes</button>
+    <button class="tab on" onclick="go('dash')"><span class="ti" data-icon="barChart"></span>Panel</button>
+    <button class="tab" onclick="go('liq')"><span class="ti" data-icon="creditCard"></span>Liquidación</button>
+    <button class="tab" onclick="go('cond')"><span class="ti" data-icon="users"></span>Conductores</button>
+    <button class="tab" onclick="go('mant')"><span class="ti" data-icon="wrench"></span>Mantenimiento</button>
+    <button class="tab" onclick="go('rep')"><span class="ti" data-icon="file"></span>Reportes</button>
+    <button class="tab" onclick="go('aj')"><span class="ti" data-icon="settings"></span>Ajustes</button>
   </div>
 
   <!-- ═══ PANEL ═══ -->
@@ -280,7 +293,7 @@ body { font-family: 'DM Sans', system-ui, sans-serif; background: var(--bg); col
     <!-- ACCESO RÁPIDO -->
     <div class="quick-liq">
       <div class="quick-liq-info">
-        <div class="ql-title">⚡ Liquidación de hoy</div>
+        <div class="ql-title">Liquidación de hoy</div>
         <div class="ql-sub" id="ql-sub">Base <span id="ql-base">$65.000</span> + Ahorro <span id="ql-ahorro">$10.000</span></div>
       </div>
       <button class="btn-quick" onclick="abrirRapido()">REGISTRAR</button>
