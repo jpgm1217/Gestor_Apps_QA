@@ -272,6 +272,11 @@ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',ren
       <div class="fg"><label class="fl" id="lbl-mora">Mora por día vencido ($)</label><input type="number" id="n-mora" value="3000" step="1000" min="0"></div>
     </div>
     <div class="fg">
+      <label class="fl">No cobrar mora hasta</label>
+      <input type="date" id="n-gracia">
+      <div style="font-size:11px;color:var(--text3);margin-top:6px">Opcional. Hasta esa fecha solo se cobra la cuota, sin mora.</div>
+    </div>
+    <div class="fg">
       <label class="fl">% comisión cobrador <span style="color:var(--text3);font-weight:400;text-transform:none">(deja vacío para usar el global)</span></label>
       <input type="number" id="n-comision" placeholder="Ej: 40  — o vacío para usar global" min="0" max="100" step="5">
     </div>
@@ -521,6 +526,7 @@ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',ren
         <div class="fg"><label class="fl">Mora por cuota ($)</label><input type="number" id="edit-mora" step="1000" min="0"></div>
         <div class="fg"><label class="fl">% Comisión cobrador</label><input type="number" id="edit-comision" min="0" max="100" placeholder="Global"></div>
       </div>
+      <div class="fg"><label class="fl">No cobrar mora hasta</label><input type="date" id="edit-gracia"><div style="font-size:11px;color:var(--text3);margin-top:6px">Hasta esa fecha la mora queda en cero aunque existan cuotas vencidas.</div></div>
     </div>
     <button class="btn btn-primary" onclick="guardarEdicionCliente()">💾 Guardar cambios</button>
     <button class="btn btn-ghost btn-full" style="margin-top:8px" onclick="cerrar('modal-edit')">Cancelar</button>
@@ -1100,13 +1106,14 @@ function crearPrestamo(){
   const plazo=sanitizarCuotas(document.getElementById('n-plazo').value,1);
   const fechaStr=document.getElementById('n-fecha').value;
   const moraDia=parseFloat(document.getElementById('n-mora').value)||0;
+  const graciaHasta=(document.getElementById('n-gracia')?.value||'').trim();
   const comisionPctVal=document.getElementById('n-comision').value.trim();
   const comisionPct=comisionPctVal!==''?parseFloat(comisionPctVal):null;
   const rd=parseInt(document.getElementById('n-redondeo')?.value)||1000;
   const diasCustom=tipo==='personalizado'?parseInt(document.getElementById('n-dias-custom')?.value)||3:null;
   const {arr,total,cuota,cuotaUltima,interes,diasCuota}=genCuotas(capital,tasa,plazo,tipo,fechaStr,rd,diasCustom);
   const tl={diario:'día',semanal:'semana',quincenal:'quincena',mensual:'mes',personalizado:`cada ${diasCuota}d`}[tipo]||'cuota';
-  const c={id:'c'+Date.now(),nombre,cedula:document.getElementById('n-cedula').value.trim(),telefono:document.getElementById('n-telefono').value.trim(),negocio:document.getElementById('n-negocio').value.trim(),zona:document.getElementById('n-zona').value.trim(),notas:document.getElementById('n-notas').value.trim(),capital,tasa,tipo,plazo,total,interes,cuota,cuotaUltima,numCuotas:plazo,tipoLabel:tl,cuotasData:arr,fechaInicio:fechaStr,moraDia,redondeo:rd,diasCuota,moraPerdonada:0,abonoParcial:0,abonoPendiente:0,pagadas:0,ultimoPago:null,comisionPct,moraCobradaTotal:0,historialMora:[],comisionEventos:[],creado:coDateTimeISO()};
+  const c={id:'c'+Date.now(),nombre,cedula:document.getElementById('n-cedula').value.trim(),telefono:document.getElementById('n-telefono').value.trim(),negocio:document.getElementById('n-negocio').value.trim(),zona:document.getElementById('n-zona').value.trim(),notas:document.getElementById('n-notas').value.trim(),capital,tasa,tipo,plazo,total,interes,cuota,cuotaUltima,numCuotas:plazo,tipoLabel:tl,cuotasData:arr,fechaInicio:fechaStr,moraDia,graciaHasta:graciaHasta||null,redondeo:rd,diasCuota,moraPerdonada:0,abonoParcial:0,abonoPendiente:0,pagadas:0,ultimoPago:null,comisionPct,moraCobradaTotal:0,historialMora:[],comisionEventos:[],creado:coDateTimeISO()};
   clientes.push(c);save();
   registrarCajaAuto('desembolso_prestamo', capital, `Desembolso préstamo: ${nombre}`, `prestamo:${c.id}:desembolso`, {clienteId:c.id, cliente:nombre});
   log({tipo:'nuevo',cliente:nombre,monto:capital,ts:Date.now(),autor:'Admin'});
@@ -1122,7 +1129,8 @@ function crearPrestamo(){
   }
   notify(`Préstamo creado para ${nombre} ✓`,'ok');
   renderCaja();
-  ['n-nombre','n-cedula','n-telefono','n-negocio','n-zona','n-notas'].forEach(id=>document.getElementById(id).value='');
+  ['n-nombre','n-cedula','n-telefono','n-negocio','n-zona','n-notas','n-gracia'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('n-fecha').value=hoy();
   renderInicio();
 }
 
@@ -1142,33 +1150,38 @@ function registrarEventoMora(c, tipo, monto, nota, autor){
   });
 }
 
-function mora(c){
-  // Mora = días calendario × moraDia, desde la primera cuota vencida
-  // Si hubo un abono reciente (moraBaseDate), reinicia desde ese día
-  // → el día del abono mismo no cuenta (mora del día en curso no se cobra hasta mañana)
-  if(!c.moraDia||c.pagadas>=c.numCuotas)return 0;
-  const h=hoy();
-  let fechaBase;
-  if(c.moraBaseDate){
-    // Abono reciente: mora empieza desde el día SIGUIENTE al abono
-    fechaBase=c.moraBaseDate;
-  } else {
-    const v=c.cuotasData?.filter(q=>q.fechaISO<h&&q.num>c.pagadas)||[];
-    if(!v.length)return 0;
+function graciaLabel(c){
+  return c?.graciaHasta?labelFromUTCDate(coUTCDateFromKey(c.graciaHasta)):'';
+}
+function graciaActiva(c, refKey=hoy()){
+  return !!(c?.graciaHasta) && refKey<=c.graciaHasta;
+}
+function inicioMoraKey(c, refKey=hoy()){
+  if(!c.moraDia||c.pagadas>=c.numCuotas)return null;
+  let fechaBase=c.moraBaseDate||null;
+  if(!fechaBase){
+    const v=c.cuotasData?.filter(q=>q.fechaISO<refKey&&q.num>c.pagadas)||[];
+    if(!v.length)return null;
     fechaBase=v[0].fechaISO;
   }
-  const diasVencidos=Math.floor((new Date(h)-new Date(fechaBase))/86400000);
+  if(c.graciaHasta){
+    const desdeGracia=addDaysToKey(c.graciaHasta,1);
+    if(desdeGracia>fechaBase)fechaBase=desdeGracia;
+  }
+  return fechaBase;
+}
+function mora(c, refKey=hoy()){
+  if(!c.moraDia||c.pagadas>=c.numCuotas)return 0;
+  const fechaBase=inicioMoraKey(c, refKey);
+  if(!fechaBase)return 0;
+  const diasVencidos=Math.floor((coUTCDateFromKey(refKey)-coUTCDateFromKey(fechaBase))/DAY_MS);
   if(diasVencidos<=0)return 0;
   return Math.max(0, diasVencidos*c.moraDia - (c.moraPerdonada||0));
 }
-function diasMora(c){
-  const h=hoy();
-  if(c.moraBaseDate){
-    return Math.max(0,Math.floor((new Date(h)-new Date(c.moraBaseDate))/86400000));
-  }
-  const v=c.cuotasData?.filter(q=>q.fechaISO<h&&q.num>c.pagadas)||[];
-  if(!v.length)return 0;
-  return Math.max(0,Math.floor((new Date(h)-new Date(v[0].fechaISO))/86400000));
+function diasMora(c, refKey=hoy()){
+  const fechaBase=inicioMoraKey(c, refKey);
+  if(!fechaBase)return 0;
+  return Math.max(0,Math.floor((coUTCDateFromKey(refKey)-coUTCDateFromKey(fechaBase))/DAY_MS));
 }
 function saldo(c){
   // Cuotas pendientes sumando correctamente la última cuota (puede ser diferente por redondeo)
@@ -1437,6 +1450,7 @@ function verCliente(id,soliId=null){
       <button class="btn btn-red btn-sm" onclick="rechazarSolicitud('${soliCtx.id}')">❌ Rechazar solicitud</button>
     </div>
   </div>`;
+  const graciaHTML=c.graciaHasta?`<div class="ibox ${graciaActiva(c)?'blue':'amber'}" style="font-size:12px">🛡️ ${graciaActiva(c)?`No cobrar mora hasta <strong>${graciaLabel(c)}</strong>`:`La gabela terminó el <strong>${graciaLabel(c)}</strong>`}</div>`:'';
   const moraHTML=m>0?`<div class="ibox red"><div style="font-weight:600;margin-bottom:9px">⚠ ${d} día${d!==1?'s':''} en mora — ${fmt(c.moraDia)}/día</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px">
       <div class="cs"><div class="csl">Mora/día</div><div class="csv" style="color:var(--red)">${fmt(c.moraDia)}</div></div>
@@ -1446,7 +1460,7 @@ function verCliente(id,soliId=null){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       <button class="btn btn-green btn-sm" onclick="cobrarConMora('${c.id}')">💰 Cobrar todo</button>
       <button class="btn btn-ghost btn-sm" onclick="perdonarMora('${c.id}')">🤝 Perdonar mora</button>
-    </div></div>`:'<div class="ibox green" style="font-size:12px">✓ Al día — sin mora</div>';
+    </div></div>`:`<div class="ibox green" style="font-size:12px">${graciaActiva(c)?`✓ Sin mora hasta ${graciaLabel(c)}`:'✓ Al día — sin mora'}</div>`;
   const cuotasHTML=c.cuotasData.map((q,i)=>{
     const p=i<c.pagadas,esH=q.fechaISO===h,v=!p&&q.fechaISO<h;
     const b=p?'<span class="badge bg" style="font-size:10px">✓</span>':esH?'<span class="badge bgold" style="font-size:10px">Hoy</span>':v?'<span class="badge br" style="font-size:10px">Vencida</span>':'<span class="badge bgray" style="font-size:10px">—</span>';
@@ -1462,6 +1476,7 @@ function verCliente(id,soliId=null){
       </div>
     </div>
     ${requestHTML}
+    ${graciaHTML}
     ${c.refinanciado&&c.dineroExtra>0?`<div class="ibox amber" style="font-size:12px">💵 Incluye <strong>${fmt(c.dineroExtra)}</strong> de dinero adicional en última refinanciación</div>`:''}
     ${(()=>{const ult=c.historialNoPago?.slice(-1)[0];if(!ult||!sameCoDate(ult.fecha,h))return '';const mora_acum=mora(c);return`<div style="background:rgba(255,107,107,.12);border:1.5px solid var(--red);border-radius:10px;padding:12px;margin-bottom:10px"><div style="font-size:13px;font-weight:700;color:var(--red);margin-bottom:6px">❌ No pagó hoy${ult.motivo&&ult.motivo!=='Sin motivo'?' — '+ult.motivo:''}</div><div style="font-size:12px;color:var(--text2)">El cobrador ya realizó la visita. Mañana debe cobrar:</div><div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:6px"><div class="cs"><div class="csl">Cuota</div><div class="csv">${fmt(c.cuota)}</div></div><div class="cs"><div class="csl">Mora acumulada</div><div class="csv" style="color:var(--red)">${fmt(mora_acum)}</div></div><div class="cs" style="grid-column:span 2"><div class="csl">Total a cobrar mañana</div><div class="csv" style="color:var(--red);font-size:16px">${fmt(c.cuota+mora_acum)}</div></div></div></div>`;})()}
     ${c.notas?`<div class="ibox blue" style="font-size:12px">📝 ${c.notas}</div>`:''}
@@ -3007,6 +3022,7 @@ function abrirEditarCliente(id){
   document.getElementById('edit-notas').value=c.notas||'';
   document.getElementById('edit-mora').value=c.moraDia||0;
   document.getElementById('edit-comision').value=c.comisionPct!==null&&c.comisionPct!==undefined?c.comisionPct:'';
+  document.getElementById('edit-gracia').value=c.graciaHasta||'';
   cerrar('modal-cli');
   document.getElementById('modal-edit').classList.add('open');
 }
@@ -3024,6 +3040,8 @@ function guardarEdicionCliente(){
   c.moraDia=parseFloat(document.getElementById('edit-mora').value)||0;
   const comVal=document.getElementById('edit-comision').value.trim();
   c.comisionPct=comVal!==''?parseFloat(comVal):null;
+  const graciaVal=(document.getElementById('edit-gracia').value||'').trim();
+  c.graciaHasta=graciaVal||null;
   save();
   log({tipo:'edicion',cliente:c.nombre,ts:Date.now(),autor:'Admin'});
   notify(`${c.nombre} actualizado ✓`,'ok');
