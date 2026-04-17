@@ -1129,15 +1129,16 @@ function genCuotas(capital,tasa,plazo,tipo,fechaStr,redondeo,diasCustom){
   const cuotaUltima=Math.max(rd,total-(cuota*(plazo-1)));
   // Días entre cuotas: personalizado o fijo según tipo
   const dxc=diasCustom||(tipo==='personalizado'?diasEntreCuotas(tipo):DIAS[tipo]||1);
-  const ini=new Date(fechaStr+'T12:00:00'),arr=[];
+  // BUGFIX: usar UTC para evitar desfase de fechas según TZ del navegador
+  const ini=coUTCDateFromKey(fechaStr||hoy()),arr=[];
   for(let i=1;i<=plazo;i++){
-    const f=new Date(ini);f.setDate(ini.getDate()+i*dxc);
+    const f=new Date(ini);f.setUTCDate(ini.getUTCDate()+i*dxc);
     const esFinal=i===plazo;
     const cq=esFinal?Math.round(cuotaUltima):cuota;
     arr.push({
       num:i,
-      fecha:f.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'numeric'}),
-      fechaISO:f.toISOString().split('T')[0],
+      fecha:labelFromUTCDate(f),
+      fechaISO:keyFromUTCDate(f),
       cuota:cq,
       capital:Math.round(capital/plazo),
       interes:Math.round(int/plazo),
@@ -1396,15 +1397,14 @@ function renderProximos7(h){
   const dias=[];
   const nombres=['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
   for(let i=1;i<=7;i++){
-    const d=new Date(h+'T12:00:00');
-    d.setDate(d.getDate()+i);
-    const dStr=d.toISOString().split('T')[0];
+    const dStr=addDaysToKey(h,i);
+    const d=coUTCDateFromKey(dStr);
     const cobros=clientes.filter(c=>c.cuotasData?.some(q=>q.fechaISO===dStr&&q.num>c.pagadas));
     const total=cobros.reduce((s,c)=>{
       const m=mora(c);
       return s+c.cuota+(m>0?m:0);
     },0);
-    dias.push({fecha:dStr,dia:nombres[d.getDay()],num:d.getDate(),total,count:cobros.length});
+    dias.push({fecha:dStr,dia:nombres[d.getUTCDay()],num:d.getUTCDate(),total,count:cobros.length});
   }
   const maxTotal=Math.max(...dias.map(d=>d.total),1);
   const el=document.getElementById('proximos-7');
@@ -2168,8 +2168,13 @@ function confirmarRefin(){
   c.historialPrestamos.push({
     capital:c.capital,tasa:c.tasa,tipo:c.tipo,plazo:c.numCuotas,
     pagadas:c.pagadas,fechaInicio:c.fechaInicio,
+    // BUGFIX: preservar mora histórica en el registro del préstamo anterior
+    moraCobradaTotal:c.moraCobradaTotal||0,
+    moraPerdonada:c.moraPerdonada||0,
     fechaCierre:coDateTimeISO(),motivo:'refinanciacion'
   });
+  // BUGFIX: acumular mora histórica de todas las refinanciaciones (para que no se pierda en Finanzas)
+  c.moraHistoricaAcumulada=(c.moraHistoricaAcumulada||0)+(c.moraCobradaTotal||0);
   // Actualizar el MISMO cliente con las nuevas condiciones (no duplicar)
   c.capital=nc;c.capitalOriginal=base;c.dineroExtra=extra;
   c.tasa=tasa;c.tipo=tipo;c.plazo=plazo;c.numCuotas=plazo;
@@ -2188,7 +2193,7 @@ function confirmarRefin(){
 
 // ACTIVIDAD
 // ===== CALENDARIO =====
-let calMes=new Date().getMonth(), calAno=new Date().getFullYear(), calDiaSeleccionado=null;
+let calMes=coNowDate().getUTCMonth(), calAno=coNowDate().getUTCFullYear(), calDiaSeleccionado=null;
 
 function cambiarMesCalendario(delta){
   calMes+=delta;
@@ -2340,7 +2345,7 @@ function renderFinanzas(){
   const capitalTotal=clientes.reduce((s,c)=>s+c.capital,0);
   const interesEsperado=clientes.reduce((s,c)=>s+c.interes,0);
   const interesCobrado=clientes.reduce((s,c)=>s+c.pagadas*(c.interes/c.numCuotas),0);
-  const moraCobrada=clientes.reduce((s,c)=>s+(c.moraCobradaTotal||0),0);
+  const moraCobrada=clientes.reduce((s,c)=>s+(c.moraCobradaTotal||0)+(c.moraHistoricaAcumulada||0),0);
   const gananciaTotal=interesCobrado+moraCobrada;
   const moraActual=act.reduce((s,c)=>s+mora(c),0);
   const enMora=act.filter(c=>mora(c)>0);
@@ -2361,8 +2366,7 @@ function renderFinanzas(){
   const proyeccion=[];
   let totalProy=0;
   for(let i=1;i<=30;i++){
-    const d=new Date(h+'T12:00:00');d.setDate(d.getDate()+i);
-    const dStr=d.toISOString().split('T')[0];
+    const dStr=addDaysToKey(h,i);
     const cobros=act.filter(c=>c.cuotasData?.some(q=>q.fechaISO===dStr&&q.num>c.pagadas));
     const tot=cobros.reduce((s,c)=>{const q=c.cuotasData.find(x=>x.fechaISO===dStr&&x.num>c.pagadas);return s+(q?.cuota||0);},0);
     proyeccion.push({dia:i,fecha:dStr,total:tot,count:cobros.length});
@@ -2448,8 +2452,10 @@ function renderActividad(){
 function persistCaja(){
   localStorage.setItem('cr_caja',JSON.stringify(caja));
   if(fbOk&&db){
-    const out=caja.reduce((acc,m)=>{acc[m.id]=m;return acc;},{});
-    db.ref('caja').set(out);
+    // BUGFIX: usar updates en vez de set para no sobreescribir movimientos concurrentes del cobrador
+    const updates={};
+    caja.forEach(m=>{updates[m.id]=m;});
+    db.ref('caja').update(updates);
   }
 }
 function registrarCajaAuto(subtipo,monto,desc,refKey,extra={}){
@@ -2459,7 +2465,9 @@ function registrarCajaAuto(subtipo,monto,desc,refKey,extra={}){
   const egresos=['desembolso_prestamo','refinanciacion_extra','liquidacion_comision'];
   const mov={id:'m'+Date.now()+Math.floor(Math.random()*1000),tipo:egresos.includes(subtipo)?'egreso':'ingreso',monto,desc,subtipo,auto:true,refKey:refKey||null,ts:Date.now(),...extra};
   caja.push(mov);
-  persistCaja();
+  // BUGFIX: guardar solo este movimiento nuevo (evita sobreescribir entradas concurrentes del cobrador)
+  localStorage.setItem('cr_caja',JSON.stringify(caja));
+  if(fbOk&&db){db.ref('caja/'+mov.id).set(mov);}
   return mov;
 }
 function syncCajaConLiquidaciones(){
@@ -2471,8 +2479,14 @@ function syncCajaConLiquidaciones(){
   });
 }
 function rangoDiaISO(iso){
+  // BUGFIX: anteriormente usaba new Date(base+'T00:00:00') que interpreta en TZ del navegador.
+  // Ahora usamos TZ Colombia explícita para que los ts de caja (que son Date.now() UTC)
+  // se comparen contra el rango real del día Colombia.
   const base=iso||hoy();
-  return {start:new Date(base+'T00:00:00').getTime(),end:new Date(base+'T23:59:59').getTime()};
+  // 00:00 Bogotá = 05:00 UTC → inicio del día en timestamp
+  const start=new Date(base+'T00:00:00'+CO_OFFSET).getTime();
+  const end=new Date(base+'T23:59:59'+CO_OFFSET).getTime();
+  return {start,end};
 }
 function totalCobradoHoyCaja(iso){
   const {start,end}=rangoDiaISO(iso||hoy());
@@ -2536,18 +2550,26 @@ function renderInicioBandeja(h,act){
 function capitalRecuperadoPagado(c,count){
   const cuotasPagadas=Math.max(0,Math.min(count===undefined?c.pagadas:count,c.numCuotas||0));
   if(c.cuotasData?.length){
-    let total=0;
-    for(let i=0;i<Math.min(cuotasPagadas,c.cuotasData.length);i++)total+=parseFloat(c.cuotasData[i].capital)||0;
-    return Math.max(0,Math.min(Math.round(total),Math.round(c.capital||0)));
+    let total=0,conDato=0;
+    for(let i=0;i<Math.min(cuotasPagadas,c.cuotasData.length);i++){
+      const v=parseFloat(c.cuotasData[i].capital);
+      if(Number.isFinite(v)&&v>0){total+=v;conDato++;}
+    }
+    // BUGFIX: si ninguna cuota tiene el campo capital (clientes viejos), usar fallback proporcional
+    if(conDato>0)return Math.max(0,Math.min(Math.round(total),Math.round(c.capital||0)));
   }
   return Math.round((c.capital||0)*(cuotasPagadas/Math.max(1,c.numCuotas||1)));
 }
 function interesRealizadoPagado(c,count){
   const cuotasPagadas=Math.max(0,Math.min(count===undefined?c.pagadas:count,c.numCuotas||0));
   if(c.cuotasData?.length){
-    let total=0;
-    for(let i=0;i<Math.min(cuotasPagadas,c.cuotasData.length);i++)total+=parseFloat(c.cuotasData[i].interes)||0;
-    return Math.max(0,Math.min(Math.round(total),Math.round(c.interes||0)));
+    let total=0,conDato=0;
+    for(let i=0;i<Math.min(cuotasPagadas,c.cuotasData.length);i++){
+      const v=parseFloat(c.cuotasData[i].interes);
+      if(Number.isFinite(v)&&v>0){total+=v;conDato++;}
+    }
+    // BUGFIX: si ninguna cuota tiene el campo interes (clientes viejos), usar fallback proporcional
+    if(conDato>0)return Math.max(0,Math.min(Math.round(total),Math.round(c.interes||0)));
   }
   return Math.round((c.interes||0)*(cuotasPagadas/Math.max(1,c.numCuotas||1)));
 }
@@ -2617,9 +2639,12 @@ function comisionEventosCliente(c){
 function resumenComisionCliente(c){
   return comisionEventosCliente(c).reduce((acc,e)=>{
     const com=Math.max(0,Math.round(e.comision||0));
-    const admin=Math.max(0,Math.round(e.admin||0));
     const interes=Math.max(0,Math.round(e.interes||0));
     const mora=Math.max(0,Math.round(e.mora||0));
+    // BUGFIX: eventos viejos creados por el cobrador no guardaron el campo 'admin'.
+    // Si falta, se calcula al vuelo: admin = (interés + mora) - comisión.
+    const adminRaw=(e.admin===undefined||e.admin===null)?((interes+mora)-com):e.admin;
+    const admin=Math.max(0,Math.round(adminRaw||0));
     acc.generada+=com;
     acc.liquidada+=e.liquidado?com:0;
     acc.pendiente+=e.liquidado?0:com;
@@ -2697,7 +2722,7 @@ function metricasCaja(){
   const carteraTotal=activos.reduce((s,c)=>s+saldo(c),0);
   const interesRealizado=clientes.reduce((s,c)=>s+interesRealizadoCaja(c),0);
   const interesPendiente=activos.reduce((s,c)=>s+Math.max(0,Math.round((c.interes||0)-interesRealizadoCaja(c))),0);
-  const moraReal=clientes.reduce((s,c)=>s+(c.moraCobradaTotal||0),0);
+  const moraReal=clientes.reduce((s,c)=>s+(c.moraCobradaTotal||0)+(c.moraHistoricaAcumulada||0),0);
   const moraActiva=activos.reduce((s,c)=>s+mora(c),0);
   const comisionesPagadas=totalLiquidacionesComision();
   const utilidadNeta=Math.round(interesRealizado+moraReal-comisionesPagadas-gastos);
@@ -3630,6 +3655,12 @@ function confirmarNuevoCiclo(){
     cuotasData:c.cuotasData||[]
   });
 
+  // BUGFIX: preservar comisión histórica (archivar todos, pero mantener los NO liquidados
+  // en el cliente activo para que el cobrador siga viendo lo que le deben).
+  const eventosPrevios=c.comisionEventos||[];
+  const pendientesPorLiquidar=eventosPrevios.filter(e=>!e.liquidado);
+  const moraPrevia=c.moraCobradaTotal||0;
+
   // Aplicar nuevo ciclo sobre el mismo cliente
   const {arr,total,cuota,cuotaUltima,interes,diasCuota}=genCuotas(capital,tasa,plazo,tipo,fechaStr,rd,diasCustom);
   const tl={diario:'día',semanal:'semana',quincenal:'quincena',mensual:'mes',personalizado:`cada ${diasCuota}d`}[tipo]||'cuota';
@@ -3637,7 +3668,10 @@ function confirmarNuevoCiclo(){
   c.total=total;c.interes=interes;c.cuota=cuota;c.cuotaUltima=cuotaUltima;
   c.tipoLabel=tl;c.cuotasData=arr;c.fechaInicio=fechaStr;c.moraDia=moraDia;
   c.pagadas=0;c.ultimoPago=null;c.moraBaseDate=null;c.abonoPendiente=0;
-  c.moraPerdonada=0;c.moraCobradaTotal=0;c.historialMora=[];c.comisionEventos=[];
+  c.moraPerdonada=0;c.moraCobradaTotal=0;c.historialMora=[];
+  // Mantener eventos pendientes de liquidar al cobrador + acumular mora histórica para Finanzas
+  c.comisionEventos=pendientesPorLiquidar;
+  c.moraHistoricaAcumulada=(c.moraHistoricaAcumulada||0)+moraPrevia;
 
   // Registrar salida en pool si corresponde
   moverPool('salida',capital,`Ciclo nuevo: ${c.nombre}`,c.nombre);
