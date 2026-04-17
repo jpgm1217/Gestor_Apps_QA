@@ -808,27 +808,38 @@ function renderGanancias(){
 }
 
 // MORA / SALDO
-function mora(c){
-  if(!c.moraDia||c.pagadas>=c.numCuotas)return 0;
-  const h=hoy();
-  let fechaBase;
-  if(c.moraBaseDate){
-    fechaBase=c.moraBaseDate;
-  } else {
-    const v=c.cuotasData?.filter(q=>q.fechaISO<h&&q.num>c.pagadas)||[];
-    if(!v.length)return 0;
+function graciaLabel(c){
+  return c?.graciaHasta?labelFromUTCDate(coUTCDateFromKey(c.graciaHasta)):'';
+}
+function graciaActiva(c, refKey=hoy()){
+  return !!(c?.graciaHasta) && refKey<=c.graciaHasta;
+}
+function inicioMoraKey(c, refKey=hoy()){
+  if(!c.moraDia||c.pagadas>=c.numCuotas)return null;
+  let fechaBase=c.moraBaseDate||null;
+  if(!fechaBase){
+    const v=c.cuotasData?.filter(q=>q.fechaISO<refKey&&q.num>c.pagadas)||[];
+    if(!v.length)return null;
     fechaBase=v[0].fechaISO;
   }
-  const diasVencidos=Math.floor((new Date(h)-new Date(fechaBase))/86400000);
+  if(c.graciaHasta){
+    const desdeGracia=addDaysToKey(c.graciaHasta,1);
+    if(desdeGracia>fechaBase)fechaBase=desdeGracia;
+  }
+  return fechaBase;
+}
+function mora(c, refKey=hoy()){
+  if(!c.moraDia||c.pagadas>=c.numCuotas)return 0;
+  const fechaBase=inicioMoraKey(c, refKey);
+  if(!fechaBase)return 0;
+  const diasVencidos=Math.floor((coUTCDateFromKey(refKey)-coUTCDateFromKey(fechaBase))/DAY_MS);
   if(diasVencidos<=0)return 0;
   return Math.max(0, diasVencidos*c.moraDia-(c.moraPerdonada||0));
 }
-function diasMora(c){
-  const h=hoy();
-  if(c.moraBaseDate)return Math.max(0,Math.floor((new Date(h)-new Date(c.moraBaseDate))/86400000));
-  const v=c.cuotasData?.filter(q=>q.fechaISO<h&&q.num>c.pagadas)||[];
-  if(!v.length)return 0;
-  return Math.max(0,Math.floor((new Date(h)-new Date(v[0].fechaISO))/86400000));
+function diasMora(c, refKey=hoy()){
+  const fechaBase=inicioMoraKey(c, refKey);
+  if(!fechaBase)return 0;
+  return Math.max(0,Math.floor((coUTCDateFromKey(refKey)-coUTCDateFromKey(fechaBase))/DAY_MS));
 }
 function saldo(c){
   if(c.pagadas>=c.numCuotas)return 0;
@@ -1020,6 +1031,7 @@ function abrirDetalleClienteCobrador(id){
       <div class="cs"><div class="csl">Progreso</div><div class="csv">${c.pagadas}/${c.numCuotas}</div></div>
       <div class="cs"><div class="csl">Mora</div><div class="csv" style="color:${m>0?'var(--red)':'var(--text2)'}">${m>0?fmt(m):'$0'}</div></div>
     </div>
+    ${graciaActiva(c)?`<div style="background:var(--blued);border:1px solid rgba(110,179,255,.2);border-radius:10px;padding:10px;font-size:12px;color:var(--blue);margin-bottom:10px">🛡️ Este cliente está sin mora hasta <strong>${graciaLabel(c)}</strong>.</div>`:''}
     ${m>0?`<div style="font-size:12px;color:var(--red);margin-bottom:10px">⚠ ${d} día${d!==1?'s':''} en mora</div>`:''}
     ${pendientes.length?`<div style="background:var(--amberd);border:1px solid rgba(255,170,68,.2);border-radius:10px;padding:10px;font-size:12px;color:var(--amber);margin-bottom:10px">⏳ Tiene ${pendientes.length} solicitud${pendientes.length!==1?'es':''} pendiente${pendientes.length!==1?'s':''} con admin</div>`:''}
     <div class="ct" style="margin-bottom:8px">Próximas fechas de pago</div>
@@ -1071,6 +1083,8 @@ function renderRuta(){
     const yp=sameCoDate(c.ultimoPago,h);
     const noPagoHoy=!yp&&sameCoDate(c.historialNoPago?.slice(-1)[0]?.fecha,h);
     const m=mora(c),d=diasMora(c),total=c.cuota+m;
+    const graciaOn=graciaActiva(c,h),graciaTxt=graciaLabel(c);
+    const mananaKey=addDaysToKey(h,1),mManana=mora(c,mananaKey),graciaManana=graciaActiva(c,mananaKey);
     return`<div class="cobro-card ${yp?'pagado':noPagoHoy?'urgente':m>0?'urgente':''}">
       <div class="cc-top">
         <div>
@@ -1078,21 +1092,22 @@ function renderRuta(){
           <div class="cc-det">${c.negocio||'—'}${c.zona?' · '+c.zona:''}</div>
         </div>
         <div>
-          <div class="cc-amt-lbl">${m>0?'Cuota + mora':'A cobrar'}</div>
+          <div class="cc-amt-lbl">${m>0?'Cuota + mora':graciaOn?'Solo cuota':'A cobrar'}</div>
           <div class="cc-amt" style="${m>0?'color:var(--red)':''}">${fmt(total)}</div>
         </div>
       </div>
       <div class="cc-meta">
         <span class="badge ${m>0?'br':'bgray'}">Cuota ${c.pagadas+1}/${c.numCuotas}</span>
         ${m>0?`<span class="badge br">⚠ ${d} día${d!==1?'s':''} · ${fmt(m)}</span>`:''}
+        ${graciaOn?`<span class="badge bgold">🛡️ Sin mora hasta ${graciaTxt}</span>`:''}
         ${c.notas?`<span class="badge bgold" style="font-size:10px">📝 ${c.notas.substring(0,20)}${c.notas.length>20?'...':''}</span>`:''}
       </div>
       ${m>0?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
         <div class="cs"><div class="csl">Cuota</div><div class="csv">${fmt(c.cuota)}</div></div>
         <div class="cs"><div class="csl">Mora ${d}d</div><div class="csv" style="color:var(--red)">${fmt(m)}</div></div>
-      </div>`:''}
+      </div>`:graciaOn?`<div style="background:var(--blued);border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:var(--blue)">🛡️ A este cliente no se le cobra mora hasta el <strong>${graciaTxt}</strong>.</div>`:''}
       ${c.telefono?`<div style="margin-bottom:10px"><a href="tel:${c.telefono}" style="font-size:12px;color:var(--text3);text-decoration:none">📞 ${c.telefono}</a></div>`:''}
-      ${noPagoHoy?`<div style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:10px;padding:10px;margin-bottom:8px;font-size:12px"><div style="font-weight:700;color:var(--red);margin-bottom:4px">❌ Ya visitaste — no pagó hoy</div><div style="color:var(--text2)">Mañana cobrar: <strong style="color:var(--red)">${fmt(c.cuota+mora(c))}</strong> (cuota + mora)</div></div>`:''}
+      ${noPagoHoy?`<div style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:10px;padding:10px;margin-bottom:8px;font-size:12px"><div style="font-weight:700;color:var(--red);margin-bottom:4px">❌ Ya visitaste — no pagó hoy</div><div style="color:var(--text2)">${mManana>0?`Mañana cobrar: <strong style="color:var(--red)">${fmt(c.cuota+mManana)}</strong> (cuota + mora)`:(graciaManana?`Mañana sigue sin mora hasta <strong style="color:var(--blue)">${graciaTxt}</strong>`:`Mañana cobrar: <strong>${fmt(c.cuota)}</strong> (solo cuota)`)}</div></div>`:''}
       <button class="pay-btn ${yp?'done':noPagoHoy?'done':'pending'}" ${yp||noPagoHoy?'':'onclick="abrirConfirm(\''+c.id+'\')"'}>
         ${yp?'✓ Pago registrado':noPagoHoy?'✓ Visita registrada':m>0?'💰 Cobrar cuota + mora':'💰 Marcar como pagado'}
       </button>
@@ -1131,6 +1146,7 @@ function renderTodos(){
       </div>
       <div class="prog"><div class="prog-f" style="width:${pct}%"></div></div>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Toca la tarjeta para ver próximas fechas y enviar solicitudes.</div>
+      ${graciaActiva(c,h)?`<div style="font-size:11px;color:var(--blue);margin-top:6px">🛡️ Sin mora hasta ${graciaLabel(c)}</div>`:''}
       ${!pag&&tieneH&&!yp?`<button class="pay-btn pending" style="margin-top:11px" onclick="event.stopPropagation();abrirConfirm('${c.id}')">💰 Registrar pago</button>`:''}
     </div>`;
   }).join('');
@@ -1144,7 +1160,7 @@ function abrirConfirm(id){
   document.getElementById('confirm-nombre').textContent=c.nombre;
   document.getElementById('confirm-amount').textContent=fmt(total);
   document.getElementById('confirm-amount').style.color=m>0?'var(--red)':'var(--green)';
-  document.getElementById('confirm-sub').textContent=m>0?`Cuota ${c.pagadas+1}/${c.numCuotas} + mora ${fmt(m)}`:`Cuota ${c.pagadas+1} de ${c.numCuotas}`;
+  document.getElementById('confirm-sub').textContent=m>0?`Cuota ${c.pagadas+1}/${c.numCuotas} + mora ${fmt(m)}`:(graciaActiva(c)?`Cuota ${c.pagadas+1}/${c.numCuotas} · sin mora hasta ${graciaLabel(c)}`:`Cuota ${c.pagadas+1} de ${c.numCuotas}`);
   document.getElementById('confirm-overlay').classList.add('open');
 }
 function cerrarConfirm(){document.getElementById('confirm-overlay').classList.remove('open');pendingPago=null;}
@@ -1373,6 +1389,7 @@ function mapaAgendaCobros(){
           zona:c.zona||'',
           negocio:c.negocio||'',
           telefono:c.telefono||'',
+          graciaHasta:c.graciaHasta||'',
           cuotaNum:q.num,
           totalCuotas:c.numCuotas||0
         });
@@ -1473,7 +1490,7 @@ function renderAgendaDetalle(fecha,mapa){
     '</div>'+
     items.map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="abrirDetalleClienteCobrador('${x.id}')">`+
       `<div><div style="font-size:13px;font-weight:600;color:var(--text)">${x.nombre}</div><div style="font-size:11px;color:var(--text3)">${x.zona||x.negocio||'Sin zona'} · cuota ${x.cuotaNum}/${x.totalCuotas}</div></div>`+
-      `<div style="text-align:right"><div style="font-size:13px;font-weight:700;color:${x.mora>0?'var(--red)':'var(--green)'}">${fmt((x.cuota||0)+(x.mora>0?x.mora:0))}</div>${x.mora>0?'<div style="font-size:10px;color:var(--red)">Incluye mora</div>':'<div style="font-size:10px;color:var(--text3)">Programado</div>'}</div>`+
+      `<div style="text-align:right"><div style="font-size:13px;font-weight:700;color:${x.mora>0?'var(--red)':'var(--green)'}">${fmt((x.cuota||0)+(x.mora>0?x.mora:0))}</div>${x.mora>0?'<div style="font-size:10px;color:var(--red)">Incluye mora</div>':(x.graciaHasta&&fecha<=x.graciaHasta?`<div style="font-size:10px;color:var(--blue)">Sin mora hasta ${labelFromUTCDate(coUTCDateFromKey(x.graciaHasta))}</div>`:'<div style="font-size:10px;color:var(--text3)">Programado</div>')}</div>`+
     '</div>').join('');
 }
 
