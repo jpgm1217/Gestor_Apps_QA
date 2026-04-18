@@ -1529,6 +1529,8 @@ function verCliente(id,soliId=null){
     </div>
   </div>`;
   const graciaOn=graciaActiva(c,h),graciaTxt=graciaLabel(c);
+  const cargosPend=c.cargosPendientes||0;
+  const cargosHTML=cargosPend>0?`<div class="ibox amber" style="margin-bottom:10px"><div style="font-weight:600;margin-bottom:4px">⚠ Cargos pendientes: ${fmt(cargosPend)}</div><div style="font-size:12px;color:var(--text2)">Estos cargos son separados de la mora. Cóbralos aparte o ajusta manualmente desde Caja cuando el cliente los pague.</div></div>`:'';
   const moraHTML=m>0?`<div class="ibox red"><div style="font-weight:600;margin-bottom:9px">⚠ ${d} día${d!==1?'s':''} en mora — ${fmt(c.moraDia)}/día</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px">
       <div class="cs"><div class="csl">Mora/día</div><div class="csv" style="color:var(--red)">${fmt(c.moraDia)}</div></div>
@@ -1564,6 +1566,7 @@ function verCliente(id,soliId=null){
       <div class="cs"><div class="csl">Saldo actual</div><div class="csv" style="color:var(--amber)">${fmt(sd)}</div></div>
       <div class="cs"><div class="csl">Cuota</div><div class="csv" style="color:var(--gold)">${fmt(c.cuota)}</div></div>
     </div>
+    ${cargosHTML}
     ${moraHTML}
     <div class="sl">Progreso ${pct}%</div>
     <div class="prog" style="margin-bottom:13px"><div class="prog-f" style="width:${pct}%"></div></div>
@@ -1822,10 +1825,12 @@ function generarHistorialCliente(c){
     eventos.push({
       fecha:new Date(a.fecha),
       tipo:'ajuste',
-      ico:'⚖️',
-      desc:`${a.tipoLabel} — ${a.motivo}`,
+      ico:a.revertido?'↶':'⚖️',
+      desc:`${a.tipoLabel} — ${a.motivo}${a.revertido?' (REVERTIDO)':''}`,
       monto:a.monto,
-      color:a.tipo==='descuento'||a.tipo==='correccion'?'var(--amber)':'var(--red)'
+      color:a.revertido?'var(--text3)':(a.tipo==='descuento'||a.tipo==='correccion'?'var(--amber)':'var(--red)'),
+      accion:a.revertido?null:`<button class="btn btn-ghost btn-sm" style="font-size:10px;padding:3px 7px" onclick="revertirAjuste('${c.id}','${a.id||''}')" title="Revertir">↶</button>`,
+      ajusteId:a.id
     });
   });
 
@@ -1853,9 +1858,10 @@ function generarHistorialCliente(c){
         <div style="font-size:14px;flex-shrink:0;margin-top:1px">${e.ico}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;color:var(--text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${e.desc}</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:1px">${e.fecha.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'numeric'})} · ${e.fecha.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit'})}</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:1px">${e.fecha.toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'numeric',timeZone:TZ_CO})} · ${e.fecha.toLocaleTimeString('es-CO',{hour:'2-digit',minute:'2-digit',timeZone:TZ_CO})}</div>
         </div>
         ${e.monto?`<div style="font-size:12px;font-weight:600;color:${e.color};flex-shrink:0">${fmt(e.monto)}</div>`:''}
+        ${e.accion||''}
       </div>`).join('')}
     ${eventos.length>15?`<div style="font-size:11px;color:var(--text3);text-align:center;padding:6px 0">+${eventos.length-15} eventos anteriores</div>`:''}
   </div>`;
@@ -1888,40 +1894,136 @@ function prevAjuste(){
     Saldo actual: <strong>${fmt(sd)}</strong> ${diferencia} = Nuevo saldo: <strong style="color:var(--amber)">${fmt(nuevoSaldo)}</strong>`;
 }
 
+let _ajustando=false;
 function confirmarAjuste(){
+  if(_ajustando)return;
   const c=clientes.find(x=>x.id===pendingAjuste);if(!c)return;
   const monto=parseFloat(document.getElementById('ajuste-monto').value)||0;
   const tipo=document.getElementById('ajuste-tipo').value;
   const motivo=document.getElementById('ajuste-motivo').value.trim();
-  if(!monto){notify('Ingresa un monto','err');return;}
+  if(!monto||monto<=0){notify('Ingresa un monto válido','err');return;}
   if(!motivo){notify('El motivo es obligatorio','err');return;}
+  if(!['descuento','cargo','correccion','acuerdo'].includes(tipo)){notify('Tipo inválido','err');return;}
+  if(c.pagadas>=c.numCuotas&&tipo!=='correccion'){notify('El préstamo ya está completado','err');return;}
   const tipoLabel={descuento:'Descuento',cargo:'Cargo',correccion:'Corrección',acuerdo:'Acuerdo especial'}[tipo];
+  // CONFIRMACIÓN explícita
+  const descConfirmacion={
+    descuento:`Vas a regalarle ${fmt(monto)} a ${c.nombre}. Esto se registra como EGRESO en tu Caja.`,
+    cargo:`Le cobrarás ${fmt(monto)} extra a ${c.nombre} en su próxima cuota (no es mora).`,
+    correccion:`Ajuste técnico de ${fmt(monto)} al saldo de ${c.nombre}. NO afecta Caja.`,
+    acuerdo:`Acuerdo especial: reducción de ${fmt(monto)} en el saldo de ${c.nombre}. Se registra como EGRESO en Caja.`
+  };
+  if(!confirm(`${tipoLabel} — ${c.nombre}\n\n${descConfirmacion[tipo]}\n\nMotivo: ${motivo}\n\n¿Confirmar?`))return;
+  _ajustando=true;
 
-  // Aplicar el ajuste modificando las cuotas pendientes
-  // Si es descuento: reducir abonoPendiente (suma al ya abonado)
-  // Si es cargo: agregar al saldo pendiente como cuota extra en moraPerdonada negativa
-  if(tipo==='cargo'){
-    // Añadir como mora adicional (cargo)
+  // SNAPSHOT para rollback
+  const snapshot=JSON.parse(JSON.stringify({
+    pagadas:c.pagadas, abonoPendiente:c.abonoPendiente, moraPerdonada:c.moraPerdonada,
+    cargosPendientes:c.cargosPendientes||0, historialAjustes:c.historialAjustes||[]
+  }));
+  try{
     if(!c.historialAjustes)c.historialAjustes=[];
-    c.historialAjustes.push({fecha:coDateTimeISO(),tipo,tipoLabel,monto,motivo,autor:'Admin'});
-    // Restar de moraPerdonada para que aparezca como mora adicional
-    c.moraPerdonada=(c.moraPerdonada||0)-monto;
-  } else {
-    // Descuento/corrección/acuerdo: aumentar abonoPendiente
-    if(!c.historialAjustes)c.historialAjustes=[];
-    c.historialAjustes.push({fecha:coDateTimeISO(),tipo,tipoLabel,monto,motivo,autor:'Admin'});
-    c.abonoPendiente=(c.abonoPendiente||0)+monto;
-    // Si el abono cubre la cuota completa, marcarla como pagada
-    while(c.abonoPendiente>=c.cuota&&c.pagadas<c.numCuotas){
-      c.pagadas++;
-      c.abonoPendiente-=c.cuota;
+    const ajusteId='aj_'+Date.now()+Math.floor(Math.random()*1000);
+    // Guardar el estado "antes" para poder revertir
+    const ajuste={
+      id:ajusteId,fecha:coDateTimeISO(),tipo,tipoLabel,monto,motivo,autor:'Admin',
+      estadoAntes:{pagadas:snapshot.pagadas,abonoPendiente:snapshot.abonoPendiente||0,cargosPendientes:snapshot.cargosPendientes},
+      cuotasAfectadas:0
+    };
+
+    if(tipo==='cargo'){
+      // BUGFIX: cargo va a campo separado, no se mezcla con mora
+      c.cargosPendientes=(c.cargosPendientes||0)+monto;
+      c.historialAjustes.push(ajuste);
+      save();
+      log({tipo:'ajuste_saldo',cliente:c.nombre,monto,ts:Date.now(),autor:'Admin',nota:`${tipoLabel}: ${motivo}`});
+    } else if(tipo==='correccion'){
+      // Corrección: solo ajusta saldo (sube abonoPendiente como si hubiera abonado) sin afectar caja
+      c.abonoPendiente=(c.abonoPendiente||0)+monto;
+      let cuotasCubiertas=0;
+      // Respeta cuotaUltima
+      while(c.pagadas<c.numCuotas){
+        const cuotaActual=c.cuotasData?.[c.pagadas]?.cuota||c.cuota;
+        if(c.abonoPendiente>=cuotaActual){
+          c.pagadas++;
+          c.abonoPendiente-=cuotaActual;
+          cuotasCubiertas++;
+        } else break;
+      }
+      ajuste.cuotasAfectadas=cuotasCubiertas;
+      c.historialAjustes.push(ajuste);
+      save();
+      log({tipo:'ajuste_saldo',cliente:c.nombre,monto,ts:Date.now(),autor:'Admin',nota:`${tipoLabel}: ${motivo}`});
+    } else {
+      // descuento o acuerdo: registra egreso en caja + ajusta saldo
+      c.abonoPendiente=(c.abonoPendiente||0)+monto;
+      let cuotasCubiertas=0;
+      while(c.pagadas<c.numCuotas){
+        const cuotaActual=c.cuotasData?.[c.pagadas]?.cuota||c.cuota;
+        if(c.abonoPendiente>=cuotaActual){
+          c.pagadas++;
+          c.abonoPendiente-=cuotaActual;
+          cuotasCubiertas++;
+        } else break;
+      }
+      ajuste.cuotasAfectadas=cuotasCubiertas;
+      c.historialAjustes.push(ajuste);
+      save();
+      // Registrar egreso en caja (subtipo nuevo)
+      registrarCajaAuto('descuento_otorgado', monto, `${tipoLabel} a ${c.nombre}: ${motivo}`, `ajuste:${c.id}:${ajusteId}`, {clienteId:c.id,cliente:c.nombre,ajusteId});
+      log({tipo:'ajuste_saldo',cliente:c.nombre,monto,ts:Date.now(),autor:'Admin',nota:`${tipoLabel}: ${motivo}${cuotasCubiertas>0?` (cubrió ${cuotasCubiertas} cuota${cuotasCubiertas>1?'s':''})`:''}`});
     }
+    notify(`${tipoLabel} de ${fmt(monto)} aplicado a ${c.nombre} ✓`,'ok');
+    cerrar('modal-ajuste');
+    renderClientes();renderInicio();renderCaja();
+  }catch(e){
+    console.error('Error en ajuste:',e);
+    Object.assign(c,snapshot);
+    save();
+    notify('Error al aplicar ajuste — se revirtió','err');
+  }finally{
+    _ajustando=false;
   }
-  save();
-  log({tipo:'ajuste_saldo',cliente:c.nombre,monto,ts:Date.now(),autor:'Admin',nota:`${tipoLabel}: ${motivo}`});
-  notify(`${tipoLabel} de ${fmt(monto)} aplicado a ${c.nombre} ✓`,'ok');
-  cerrar('modal-ajuste');
-  renderClientes();renderInicio();
+}
+
+function revertirAjuste(clienteId,ajusteId){
+  const c=clientes.find(x=>x.id===clienteId);if(!c)return;
+  const ajuste=(c.historialAjustes||[]).find(a=>a.id===ajusteId);
+  if(!ajuste){notify('Ajuste no encontrado','err');return;}
+  if(ajuste.revertido){notify('Este ajuste ya fue revertido','err');return;}
+  if(!confirm(`¿Revertir ${ajuste.tipoLabel} de ${fmt(ajuste.monto)} aplicado a ${c.nombre}?\n\nMotivo original: ${ajuste.motivo}\n\nEsto ${ajuste.tipo==='descuento'||ajuste.tipo==='acuerdo'?'devolverá el egreso de Caja, ':''}revertirá el saldo del cliente.`))return;
+  try{
+    // Revertir según tipo
+    if(ajuste.tipo==='cargo'){
+      c.cargosPendientes=Math.max(0,(c.cargosPendientes||0)-ajuste.monto);
+    } else if(ajuste.tipo==='correccion'){
+      // Deshacer: quitar las cuotas que se marcaron pagadas y devolver abonoPendiente
+      c.pagadas=ajuste.estadoAntes.pagadas;
+      c.abonoPendiente=ajuste.estadoAntes.abonoPendiente||0;
+    } else {
+      // descuento o acuerdo: revertir cuotas + quitar egreso de caja
+      c.pagadas=ajuste.estadoAntes.pagadas;
+      c.abonoPendiente=ajuste.estadoAntes.abonoPendiente||0;
+      // Buscar y eliminar el movimiento de caja
+      const refKey=`ajuste:${c.id}:${ajusteId}`;
+      const idx=caja.findIndex(m=>m.refKey===refKey);
+      if(idx>=0){
+        const mov=caja[idx];
+        caja.splice(idx,1);
+        localStorage.setItem('cr_caja',JSON.stringify(caja));
+        if(fbOk&&db)db.ref('caja/'+mov.id).remove();
+      }
+    }
+    // Marcar como revertido (conservar en historial para auditoría)
+    ajuste.revertido=true;
+    ajuste.fechaReversion=coDateTimeISO();
+    save();
+    log({tipo:'ajuste_revertido',cliente:c.nombre,monto:-ajuste.monto,ts:Date.now(),autor:'Admin',nota:`Revertido: ${ajuste.tipoLabel} ${fmt(ajuste.monto)}`});
+    notify(`${ajuste.tipoLabel} revertido ✓`,'ok');
+    renderClientes();renderInicio();renderCaja();
+  }catch(e){
+    console.error(e);notify('Error al revertir','err');
+  }
 }
 
 // PAGOS
@@ -2623,7 +2725,7 @@ function registrarCajaAuto(subtipo,monto,desc,refKey,extra={}){
   monto=Math.round(parseFloat(monto)||0);
   if(monto<=0)return null;
   if(refKey&&caja.some(m=>m.auto&&m.refKey===refKey))return null;
-  const egresos=['desembolso_prestamo','refinanciacion_extra','liquidacion_comision'];
+  const egresos=['desembolso_prestamo','refinanciacion_extra','liquidacion_comision','descuento_otorgado'];
   const mov={id:'m'+Date.now()+Math.floor(Math.random()*1000),tipo:egresos.includes(subtipo)?'egreso':'ingreso',monto,desc,subtipo,auto:true,refKey:refKey||null,ts:Date.now(),...extra};
   caja.push(mov);
   // BUGFIX: guardar solo este movimiento nuevo (evita sobreescribir entradas concurrentes del cobrador)
@@ -2901,6 +3003,9 @@ function metricasCaja(){
   const ingresosCapital=caja.filter(m=>!m.auto&&m.tipo==='ingreso').reduce((s,m)=>s+(m.monto||0),0);
   const retirosCapital=caja.filter(m=>!m.auto&&m.tipo==='egreso').reduce((s,m)=>s+(m.monto||0),0);
   const gastos=caja.filter(m=>m.tipo==='gasto').reduce((s,m)=>s+(m.monto||0),0);
+  // BUGFIX: descuentos/acuerdos otorgados son egresos que afectan utilidad real
+  const descuentosOtorgados=caja.filter(m=>m.auto&&m.subtipo==='descuento_otorgado').reduce((s,m)=>s+(m.monto||0),0);
+  const cargosCobrados=caja.filter(m=>m.auto&&m.subtipo==='cargo_cobrado').reduce((s,m)=>s+(m.monto||0),0);
   const capitalBase=ingresosCapital-retirosCapital;
   const activos=clientes.filter(c=>(c.pagadas||0)<(c.numCuotas||0));
   const principalCalle=activos.reduce((s,c)=>s+capitalPendiente(c),0);
@@ -2910,9 +3015,10 @@ function metricasCaja(){
   const moraReal=clientes.reduce((s,c)=>s+(c.moraCobradaTotal||0)+(c.moraHistoricaAcumulada||0),0);
   const moraActiva=activos.reduce((s,c)=>s+mora(c),0);
   const comisionesPagadas=totalLiquidacionesComision();
-  const utilidadNeta=Math.round(interesRealizado+moraReal-comisionesPagadas-gastos);
-  const disponibleReal=capitalBase-principalCalle+interesRealizado+moraReal-comisionesPagadas-gastos;
-  return {ingresosCapital,retirosCapital,gastos,capitalBase,principalCalle,carteraTotal,interesRealizado,interesPendiente,moraReal,moraActiva,comisionesPagadas,utilidadNeta,disponibleReal};
+  // Utilidad: ingresos (interés + mora + cargos) - gastos - descuentos - comisiones
+  const utilidadNeta=Math.round(interesRealizado+moraReal+cargosCobrados-comisionesPagadas-gastos-descuentosOtorgados);
+  const disponibleReal=capitalBase-principalCalle+interesRealizado+moraReal+cargosCobrados-comisionesPagadas-gastos-descuentosOtorgados;
+  return {ingresosCapital,retirosCapital,gastos,capitalBase,principalCalle,carteraTotal,interesRealizado,interesPendiente,moraReal,moraActiva,comisionesPagadas,utilidadNeta,disponibleReal,descuentosOtorgados,cargosCobrados};
 }
 function renderCaja(){
   const m=metricasCaja();
@@ -2946,7 +3052,7 @@ function renderCaja(){
   const el=document.getElementById('cj-historial');
   if(!el)return;
   if(!caja.length){el.innerHTML='<div style="font-size:13px;color:var(--text3);padding:10px 0;text-align:center">Sin movimientos</div>';return;}
-  const labelSubtipo={desembolso_prestamo:'Desembolso',recuperacion_capital:'Capital recuperado',interes_cobrado:'Interés',mora_cobrada:'Mora',refinanciacion_extra:'Extra refinanciación',abono_adelantado:'Abono adelantado',liquidacion_comision:'Pago comisión cobrador'};
+  const labelSubtipo={desembolso_prestamo:'Desembolso',recuperacion_capital:'Capital recuperado',interes_cobrado:'Interés',mora_cobrada:'Mora',refinanciacion_extra:'Extra refinanciación',abono_adelantado:'Abono adelantado',liquidacion_comision:'Pago comisión cobrador',descuento_otorgado:'Descuento/Acuerdo otorgado',cargo_cobrado:'Cargo cobrado'};
   el.innerHTML=caja.slice().sort((a,b)=>(b.ts||0)-(a.ts||0)).map(mv=>{
     // BUGFIX: formato fecha con TZ Colombia
     const ts=new Date(mv.ts).toLocaleDateString('es-CO',{day:'2-digit',month:'2-digit',year:'2-digit',timeZone:TZ_CO});
