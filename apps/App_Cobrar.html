@@ -615,9 +615,20 @@ Gracias por su pago 🙏`;
 function getWATemplate(){
   return window._waTemplateFB||localStorage.getItem(WA_TEMPLATE_KEY)||WA_TEMPLATE_DEFAULT;
 }
+// Devuelve la cuota correcta del índice (próxima a pagar por defecto). Soporta cuotas variables (post-ajuste manual).
+function cuotaDe(c,idx){
+  if(idx===undefined||idx===null)idx=c.pagadas;
+  return c.cuotasData?.[idx]?.cuota||c.cuota||0;
+}
+// Saldo restante calculado correctamente sumando las cuotas pendientes (NO multiplicando por c.cuota plano)
+function saldoRestanteDesde(c,desdeIdx){
+  if(desdeIdx===undefined||desdeIdx===null)desdeIdx=c.pagadas;
+  if(!Array.isArray(c.cuotasData))return Math.max(0,(c.numCuotas-desdeIdx)*c.cuota);
+  return c.cuotasData.slice(desdeIdx).reduce((s,q)=>s+(parseFloat(q.cuota)||0),0);
+}
 function buildWAMsg(c,cuotaNum,montoTotal,moraAmt){
   const fecha=coDateLabel();
-  const saldoRest=Math.max(0,(c.numCuotas-cuotaNum)*c.cuota);
+  const saldoRest=saldoRestanteDesde(c,cuotaNum);
   return getWATemplate()
     .replace(/{nombre}/g,c.nombre)
     .replace(/{negocio}/g,c.negocio||'—')
@@ -625,7 +636,7 @@ function buildWAMsg(c,cuotaNum,montoTotal,moraAmt){
     .replace(/{cuota}/g,cuotaNum)
     .replace(/{total_cuotas}/g,c.numCuotas)
     .replace(/{mora}/g,fmt(moraAmt||0))
-    .replace(/{total}/g,fmt(montoTotal||c.cuota))
+    .replace(/{total}/g,fmt(montoTotal||cuotaDe(c,cuotaNum-1)))
     .replace(/{saldo}/g,fmt(saldoRest));
 }
 
@@ -1151,7 +1162,7 @@ function abrirDetalleClienteCobrador(id){
     <div style="font-size:12px;color:var(--text3);margin-bottom:10px">${c.negocio||'—'}${c.zona?' · '+c.zona:''}${c.telefono?' · 📞 '+c.telefono:''}</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div class="cs"><div class="csl">Saldo</div><div class="csv" style="color:var(--amber)">${fmt(sd)}</div></div>
-      <div class="cs"><div class="csl">Cuota actual</div><div class="csv" style="color:var(--green)">${fmt(c.cuota)}</div></div>
+      <div class="cs"><div class="csl">Cuota actual</div><div class="csv" style="color:var(--green)">${fmt(cuotaDe(c))}</div></div>
       <div class="cs"><div class="csl">Progreso</div><div class="csv">${c.pagadas}/${c.numCuotas}</div></div>
       <div class="cs"><div class="csl">Mora</div><div class="csv" style="color:${m>0?'var(--red)':'var(--text2)'}">${m>0?fmt(m):'$0'}</div></div>
     </div>
@@ -1187,8 +1198,10 @@ function renderRuta(){
   ruta.forEach(c=>{
     const p=sameCoDate(c.ultimoPago,h);
     const m=mora(c);
-    if(p){cobrado+=c.cuota;countCob++;}
-    else{pendiente+=c.cuota+m;countPend++;}
+    // Si ya pagó, usar cuota del índice anterior (la que se pagó). Si no, próxima cuota.
+    const cuotaEstaSemana=cuotaDe(c,p?Math.max(0,c.pagadas-1):c.pagadas);
+    if(p){cobrado+=cuotaEstaSemana;countCob++;}
+    else{pendiente+=cuotaEstaSemana+m;countPend++;}
     if(m>0&&!p)countMora++;
   });
   document.getElementById('r-pendiente').textContent=fmt(pendiente);
@@ -1214,7 +1227,7 @@ function renderRuta(){
   el.innerHTML=ord.map(c=>{
     const yp=sameCoDate(c.ultimoPago,h);
     const noPagoHoy=!yp&&sameCoDate(c.historialNoPago?.slice(-1)[0]?.fecha,h);
-    const m=mora(c),d=diasMora(c),total=c.cuota+m;
+    const m=mora(c),d=diasMora(c),cuotaReal=cuotaDe(c,c.pagadas),total=cuotaReal+m;
     const graciaOn=graciaActiva(c,h),graciaTxt=graciaLabel(c);
     const mananaKey=addDaysToKey(h,1),mManana=mora(c,mananaKey),graciaManana=graciaActiva(c,mananaKey);
     return`<div class="cobro-card ${yp?'pagado':noPagoHoy?'urgente':m>0?'urgente':''}">
@@ -1236,11 +1249,11 @@ function renderRuta(){
         ${c.notas?`<span class="badge bgold" style="font-size:10px">📝 ${c.notas.substring(0,20)}${c.notas.length>20?'...':''}</span>`:''}
       </div>
       ${m>0?`<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
-        <div class="cs"><div class="csl">Cuota</div><div class="csv">${fmt(c.cuota)}</div></div>
+        <div class="cs"><div class="csl">Cuota</div><div class="csv">${fmt(cuotaReal)}</div></div>
         <div class="cs"><div class="csl">Mora ${d}d</div><div class="csv" style="color:var(--red)">${fmt(m)}</div></div>
       </div>`:graciaOn?`<div style="background:rgba(110,179,255,.1);border:1px solid rgba(110,179,255,.3);border-radius:10px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:#6EB3FF">🛡️ A este cliente no se le cobra mora hasta el <strong>${graciaTxt}</strong>.</div>`:''}
       ${c.telefono?`<div style="margin-bottom:10px"><a href="tel:${c.telefono}" style="font-size:12px;color:var(--text3);text-decoration:none">📞 ${c.telefono}</a></div>`:''}
-      ${noPagoHoy?`<div style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:10px;padding:10px;margin-bottom:8px;font-size:12px"><div style="font-weight:700;color:var(--red);margin-bottom:4px">❌ Ya visitaste — no pagó hoy</div><div style="color:var(--text2)">${mManana>0?`Mañana cobrar: <strong style="color:var(--red)">${fmt(c.cuota+mManana)}</strong> (cuota + mora)`:(graciaManana?`Mañana sigue sin mora hasta <strong style="color:#6EB3FF">${graciaTxt}</strong>`:`Mañana cobrar: <strong>${fmt(c.cuota)}</strong> (solo cuota)`)}</div></div>`:''}
+      ${noPagoHoy?`<div style="background:rgba(255,107,107,.12);border:1px solid var(--red);border-radius:10px;padding:10px;margin-bottom:8px;font-size:12px"><div style="font-weight:700;color:var(--red);margin-bottom:4px">❌ Ya visitaste — no pagó hoy</div><div style="color:var(--text2)">${mManana>0?`Mañana cobrar: <strong style="color:var(--red)">${fmt(cuotaReal+mManana)}</strong> (cuota + mora)`:(graciaManana?`Mañana sigue sin mora hasta <strong style="color:#6EB3FF">${graciaTxt}</strong>`:`Mañana cobrar: <strong>${fmt(cuotaReal)}</strong> (solo cuota)`)}</div></div>`:''}
       ${aplicaProntoPago(c)?`
         <div style="background:linear-gradient(135deg,rgba(232,197,71,.18),rgba(232,197,71,.04));border:1.5px solid rgba(232,197,71,.4);border-radius:10px;padding:10px;margin-bottom:8px">
           <div style="font-size:12px;font-weight:700;color:var(--gold);margin-bottom:4px">⚡ EN PRONTO PAGO — ${diasRestantesProntoPago(c)} día${diasRestantesProntoPago(c)===1?'':'s'}</div>
@@ -1285,7 +1298,7 @@ function renderTodos(){
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:9px">
         <div class="cs"><div class="csl">Saldo</div><div class="csv" style="color:var(--amber)">${fmt(sd)}</div></div>
-        <div class="cs"><div class="csl">Cuota</div><div class="csv" style="color:var(--green)">${fmt(c.cuota)}</div></div>
+        <div class="cs"><div class="csl">Cuota</div><div class="csv" style="color:var(--green)">${fmt(cuotaDe(c))}</div></div>
       </div>
       <div class="prog"><div class="prog-f" style="width:${pct}%"></div></div>
       <div style="font-size:11px;color:var(--text3);margin-top:8px">Toca la tarjeta para ver próximas fechas y enviar solicitudes.</div>
@@ -1299,7 +1312,7 @@ function abrirConfirm(id){
   const c=clientes.find(x=>x.id===id);if(!c)return;
   if(aplicaProntoPago(c)){notify('🔒 Cliente en pronto pago — no puedes registrar pagos. Usa "Avisar a admin"','err');return;}
   pendingPago=id;
-  const m=mora(c),total=c.cuota+m;
+  const m=mora(c),cuotaReal=cuotaDe(c,c.pagadas),total=cuotaReal+m;
   document.getElementById('confirm-nombre').textContent=c.nombre;
   document.getElementById('confirm-amount').textContent=fmt(total);
   document.getElementById('confirm-amount').style.color=m>0?'var(--red)':'var(--green)';
@@ -1480,7 +1493,7 @@ async function confirmarPago(){
   const c=clientes.find(x=>x.id===pendingPago);if(!c)return;
   cerrarConfirm();
   if(!fbOk||!db){notify('Sin conexión Firebase','err');return;}
-  const m=mora(c),total=c.cuota+m;
+  const m=mora(c),cuotaReal=cuotaDe(c,c.pagadas),total=cuotaReal+m;
   const partes=partesCuotaIndex(c,c.pagadas);
   c.pagadas++;
   if(m>0){

@@ -1998,15 +1998,30 @@ function confirmarAjuste(){
   // La última cuota absorbe el residuo (puede ser mayor que las demás)
   const N=pendientesIdx.length;
   if(nuevoTotalPendiente===0){
-    pendientesIdx.forEach(i=>c.cuotasData[i].cuota=0);
+    pendientesIdx.forEach(i=>{
+      c.cuotasData[i].cuota=0;
+      c.cuotasData[i].capital=0;
+      c.cuotasData[i].interes=0;
+    });
     c.pagadas=c.numCuotas;
     c.abonoPendiente=0;
   } else {
     const rd=c.redondeo||1000;
     const cuotaBase=rd>1?Math.floor((nuevoTotalPendiente/N)/rd)*rd:Math.floor(nuevoTotalPendiente/N);
     const ultimaCuota=Math.max(0,nuevoTotalPendiente-cuotaBase*(N-1));
+    // Capital ya recuperado en cuotas pagadas (suma de q.capital de las pagadas)
+    const capitalPagado=c.cuotasData.slice(0,c.pagadas).reduce((s,q)=>s+(parseFloat(q.capital)||0),0);
+    const capitalPendiente=Math.max(0,(c.capital||0)-capitalPagado);
+    // Interés pendiente = nuevoTotalPendiente - capitalPendiente (puede ser negativo si descuento muy grande)
+    const interesPendiente=Math.max(0,nuevoTotalPendiente-capitalPendiente);
+    // Para cada cuota pendiente: distribuir capital e interés proporcionalmente al monto de la cuota
     pendientesIdx.forEach((i,k)=>{
-      c.cuotasData[i].cuota=k===N-1?ultimaCuota:cuotaBase;
+      const cuotaK=k===N-1?ultimaCuota:cuotaBase;
+      c.cuotasData[i].cuota=cuotaK;
+      // Proporción de esta cuota respecto al total pendiente
+      const proporcion=nuevoTotalPendiente>0?cuotaK/nuevoTotalPendiente:0;
+      c.cuotasData[i].capital=Math.round(capitalPendiente*proporcion);
+      c.cuotasData[i].interes=Math.max(0,cuotaK-c.cuotasData[i].capital);
     });
     while(c.abonoPendiente>=(c.cuotasData[c.pagadas]?.cuota||Infinity)&&c.pagadas<c.numCuotas){
       c.abonoPendiente-=c.cuotasData[c.pagadas].cuota;
