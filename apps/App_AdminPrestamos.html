@@ -563,6 +563,7 @@ document.readyState==='loading'?document.addEventListener('DOMContentLoaded',ren
     <div class="mhandle"></div>
     <div class="mtitle">⚖️ Ajuste manual de saldo</div>
     <div id="ajuste-info" class="ibox blue" style="margin-bottom:12px"></div>
+    <div id="ajuste-ultimo" style="margin-bottom:12px"></div>
     <div class="fr">
       <div class="fg">
         <label class="fl">Tipo de ajuste</label>
@@ -1907,7 +1908,24 @@ function abrirAjusteSaldo(id){
   const c=clientes.find(x=>x.id===id);if(!c)return;
   pendingAjuste=id;
   const sd=saldo(c);
-  document.getElementById('ajuste-info').innerHTML=`<strong>${c.nombre}</strong> · Saldo actual: <strong>${fmt(sd)}</strong>`;
+  document.getElementById('ajuste-info').innerHTML=`<strong>${c.nombre}</strong> · Saldo actual: <strong>${fmt(sd)}</strong> · Cuota actual: <strong>${fmt(c.cuotasData?.[c.pagadas]?.cuota||c.cuota)}</strong>`;
+  // Panel del último ajuste (si existe y es revertible)
+  const ult=(c.historialAjustes||[]).slice(-1)[0];
+  const elUlt=document.getElementById('ajuste-ultimo');
+  if(ult&&ult.cuotasDataAntes){
+    elUlt.innerHTML=`
+      <div style="background:var(--amberd);border:1px solid rgba(255,170,68,.25);border-radius:10px;padding:10px;font-size:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <strong style="color:var(--amber)">Último ajuste: ${ult.tipoLabel} ${fmt(ult.monto)}</strong>
+          <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:4px 8px" onclick="revertirUltimoAjuste('${c.id}')">↶ Revertir</button>
+        </div>
+        <div style="color:var(--text2);font-size:11px">${ult.motivo} · ${ult.fecha?.split('T')[0]||''}</div>
+      </div>`;
+  } else if(ult){
+    elUlt.innerHTML=`<div style="font-size:11px;color:var(--text3);text-align:center">Hay ajustes anteriores (versión antigua, no revertibles)</div>`;
+  } else {
+    elUlt.innerHTML='';
+  }
   document.getElementById('ajuste-monto').value='';
   document.getElementById('ajuste-motivo').value='';
   document.getElementById('ajuste-prev').innerHTML='';
@@ -1921,10 +1939,22 @@ function prevAjuste(){
   const tipo=document.getElementById('ajuste-tipo').value;
   if(!monto){document.getElementById('ajuste-prev').innerHTML='';return;}
   const sd=saldo(c);
-  const nuevoSaldo=tipo==='cargo'?sd+monto:Math.max(0,sd-monto);
+  const delta=tipo==='cargo'?monto:-monto;
+  const nuevoSaldo=Math.max(0,sd+delta);
+  const N=Math.max(0,c.numCuotas-c.pagadas);
+  const cuotaActual=c.cuotasData?.[c.pagadas]?.cuota||c.cuota||0;
+  let cuotaNueva=0;
+  if(N>0&&nuevoSaldo>0){
+    const rd=c.redondeo||1000;
+    cuotaNueva=rd>1?Math.floor((nuevoSaldo/N)/rd)*rd:Math.floor(nuevoSaldo/N);
+  }
   const diferencia=tipo==='cargo'?'+'+fmt(monto):'-'+fmt(monto);
+  const cap=nuevoSaldo===0?' <span style="color:var(--green)">→ préstamo se cerrará</span>':'';
   document.getElementById('ajuste-prev').innerHTML=`
-    Saldo actual: <strong>${fmt(sd)}</strong> ${diferencia} = Nuevo saldo: <strong style="color:var(--amber)">${fmt(nuevoSaldo)}</strong>`;
+    <div style="font-size:12px;line-height:1.7">
+      Saldo: <strong>${fmt(sd)}</strong> ${diferencia} = <strong style="color:var(--amber)">${fmt(nuevoSaldo)}</strong>${cap}<br>
+      Cuota: <strong>${fmt(cuotaActual)}</strong> → <strong style="color:var(--gold)">${fmt(cuotaNueva)}</strong> × ${N} cuotas restantes
+    </div>`;
 }
 
 function confirmarAjuste(){
@@ -1936,30 +1966,102 @@ function confirmarAjuste(){
   if(!motivo){notify('El motivo es obligatorio','err');return;}
   const tipoLabel={descuento:'Descuento',cargo:'Cargo',correccion:'Corrección',acuerdo:'Acuerdo especial'}[tipo];
 
-  // Aplicar el ajuste modificando las cuotas pendientes
-  // Si es descuento: reducir abonoPendiente (suma al ya abonado)
-  // Si es cargo: agregar al saldo pendiente como cuota extra en moraPerdonada negativa
-  if(tipo==='cargo'){
-    // Añadir como mora adicional (cargo)
-    if(!c.historialAjustes)c.historialAjustes=[];
-    c.historialAjustes.push({fecha:coDateTimeISO(),tipo,tipoLabel,monto,motivo,autor:'Admin'});
-    // Restar de moraPerdonada para que aparezca como mora adicional
-    c.moraPerdonada=(c.moraPerdonada||0)-monto;
+  if(c.pagadas>=c.numCuotas){notify('Préstamo ya completado, no se puede ajustar','err');return;}
+  if(!Array.isArray(c.cuotasData)||!c.cuotasData.length){notify('Cliente sin cuotas configuradas','err');return;}
+
+  // Snapshot ANTES del cambio (para historial y posible reversa)
+  const snapshot={
+    fecha:coDateTimeISO(),tipo,tipoLabel,monto,motivo,autor:'Admin',
+    totalAntes:c.total,interesAntes:c.interes,cuotaAntes:c.cuota,
+    cuotasDataAntes:JSON.parse(JSON.stringify(c.cuotasData)),
+    abonoPendienteAntes:c.abonoPendiente||0,
+    pagadasAntes:c.pagadas
+  };
+
+  // Pendientes ANTES del ajuste
+  const pendientesIdx=c.cuotasData.map((_,i)=>i).filter(i=>i>=c.pagadas);
+  const totalPendienteAntes=pendientesIdx.reduce((s,i)=>s+(c.cuotasData[i].cuota||0),0);
+
+  // Cargo: SUMA al saldo. Descuento/corrección/acuerdo: RESTAN del saldo.
+  const delta=tipo==='cargo'?monto:-monto;
+  let nuevoTotalPendiente=totalPendienteAntes+delta;
+
+  // Salvavidas: si descuento es mayor al saldo, lo capamos
+  if(nuevoTotalPendiente<0){
+    const exceso=-nuevoTotalPendiente;
+    notify(`Descuento mayor al saldo. Se aplicó solo ${fmt(monto-exceso)} (saldo era ${fmt(totalPendienteAntes)})`,'warn');
+    nuevoTotalPendiente=0;
+  }
+
+  // Recalcular cuotas pendientes: dividir nuevoTotalPendiente entre N cuotas restantes
+  // Usar FLOOR en cuota base para garantizar que la suma NUNCA supere el saldo nuevo
+  // La última cuota absorbe el residuo (puede ser mayor que las demás)
+  const N=pendientesIdx.length;
+  if(nuevoTotalPendiente===0){
+    pendientesIdx.forEach(i=>c.cuotasData[i].cuota=0);
+    c.pagadas=c.numCuotas;
+    c.abonoPendiente=0;
   } else {
-    // Descuento/corrección/acuerdo: aumentar abonoPendiente
-    if(!c.historialAjustes)c.historialAjustes=[];
-    c.historialAjustes.push({fecha:coDateTimeISO(),tipo,tipoLabel,monto,motivo,autor:'Admin'});
-    c.abonoPendiente=(c.abonoPendiente||0)+monto;
-    // Si el abono cubre la cuota completa, marcarla como pagada
-    while(c.abonoPendiente>=c.cuota&&c.pagadas<c.numCuotas){
+    const rd=c.redondeo||1000;
+    const cuotaBase=rd>1?Math.floor((nuevoTotalPendiente/N)/rd)*rd:Math.floor(nuevoTotalPendiente/N);
+    const ultimaCuota=Math.max(0,nuevoTotalPendiente-cuotaBase*(N-1));
+    pendientesIdx.forEach((i,k)=>{
+      c.cuotasData[i].cuota=k===N-1?ultimaCuota:cuotaBase;
+    });
+    while(c.abonoPendiente>=(c.cuotasData[c.pagadas]?.cuota||Infinity)&&c.pagadas<c.numCuotas){
+      c.abonoPendiente-=c.cuotasData[c.pagadas].cuota;
       c.pagadas++;
-      c.abonoPendiente-=c.cuota;
     }
   }
+
+  // Actualizar KPIs globales del préstamo
+  // total = capital + interés efectivo. Acá el ajuste cambia el total directamente.
+  c.total=(c.total||0)+delta;
+  c.interes=Math.max(0,c.total-c.capital);
+  // c.cuota se usa como referencia "monto típico" — actualizamos a la nueva cuota base
+  if(N>0&&nuevoTotalPendiente>0){
+    c.cuota=c.cuotasData[c.pagadas]?.cuota||c.cuota;
+    c.cuotaUltima=c.cuotasData[c.numCuotas-1]?.cuota||c.cuotaUltima;
+  }
+
+  // Historial con snapshot completo (permite revertir)
+  if(!c.historialAjustes)c.historialAjustes=[];
+  c.historialAjustes.push(snapshot);
+
+  // Si fue cargo, registrar en caja como ingreso pendiente; si descuento, NO mover caja
+  // (descuento no es egreso real, es una rebaja contable)
+  // Comisión: si descuento afecta interés cobrable, NO se ajusta retroactivamente
+  // (se mantiene la comisión sobre lo efectivamente cobrado al pagar las cuotas)
+
   save();
-  log({tipo:'ajuste_saldo',cliente:c.nombre,monto,ts:Date.now(),autor:'Admin',nota:`${tipoLabel}: ${motivo}`});
-  notify(`${tipoLabel} de ${fmt(monto)} aplicado a ${c.nombre} ✓`,'ok');
+  log({tipo:'ajuste_saldo',cliente:c.nombre,monto,ts:Date.now(),autor:'Admin',
+       nota:`${tipoLabel}: ${motivo} · saldo ${fmt(totalPendienteAntes)} → ${fmt(nuevoTotalPendiente)}`});
+  notify(`${tipoLabel} de ${fmt(monto)} aplicado a ${c.nombre} ✓ Cuotas recalculadas a ${fmt(c.cuota)}`,'ok');
   cerrar('modal-ajuste');
+  renderClientes();renderInicio();
+}
+
+// Revertir el último ajuste manual (deshacer)
+function revertirUltimoAjuste(id){
+  const c=clientes.find(x=>x.id===id);if(!c)return;
+  const h=c.historialAjustes||[];
+  if(!h.length){notify('Sin ajustes para revertir','err');return;}
+  const ult=h[h.length-1];
+  if(!ult.cuotasDataAntes){notify('Este ajuste es de versión antigua, no se puede revertir automáticamente','err');return;}
+  if(!confirm(`¿Revertir el último ajuste?\n\n${ult.tipoLabel}: ${fmt(ult.monto)} (${ult.motivo})\nFecha: ${ult.fecha}\n\nEsto restaurará el estado anterior del préstamo.`))return;
+  c.cuotasData=JSON.parse(JSON.stringify(ult.cuotasDataAntes));
+  c.total=ult.totalAntes;
+  c.interes=ult.interesAntes;
+  c.cuota=ult.cuotaAntes;
+  c.cuotaUltima=c.cuotasData[c.numCuotas-1]?.cuota||c.cuotaUltima;
+  c.abonoPendiente=ult.abonoPendienteAntes;
+  c.pagadas=ult.pagadasAntes;
+  h.pop();
+  save();
+  log({tipo:'ajuste_revertido',cliente:c.nombre,monto:ult.monto,ts:Date.now(),autor:'Admin',
+       nota:`Revertido ${ult.tipoLabel}: ${ult.motivo}`});
+  notify(`Ajuste revertido para ${c.nombre} ✓`,'ok');
+  cerrar('modal-cli');
   renderClientes();renderInicio();
 }
 
