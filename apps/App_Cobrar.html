@@ -1590,9 +1590,10 @@ async function confirmarAbonoCobrador(){
       c.pagadas--;c.abonoPendiente=yaAbonado;c.ultimoPago=null;
     }
   } else {
-    // Abono parcial — primero cubre mora y el resto se aplica a la cuota
-    const abonoEnMora=Math.min(v,m);
-    const abonoEnCuota=v-abonoEnMora;
+    // Abono parcial — el monto completo se aplica a la cuota (capital+interés)
+    // La mora NO se descuenta del abono parcial; sigue corriendo hasta pago completo
+    const abonoEnMora=0;
+    const abonoEnCuota=v;
     if(abonoEnMora>0){
       if(!c.historialMora)c.historialMora=[];
       c.historialMora.push({fecha:coDateTimeISO(),tipo:'cobrada',monto:abonoEnMora,diasVencidos:diasMora(c),moraDia:c.moraDia,nota:`Mora parcial cuota ${c.pagadas+1}/${c.numCuotas}`,autor:'Cobrador'});

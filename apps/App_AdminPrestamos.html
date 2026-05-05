@@ -2087,7 +2087,7 @@ function prevAbono(){
     msg=`<span style="color:var(--green)">✓ Cubre cuota${m>0?' + mora':''} completa — se marcará como pagada</span>`;
     if(v>totalDeber)msg+=`<br><span style="color:var(--text2);font-size:11px">Sobran ${fmt(v-totalDeber)} que se abonan a la siguiente cuota</span>`;
   } else {
-    msg=`<span style="color:var(--amber)">Quedan ${fmt(diferencia)} pendientes (cuota${m>0?'+mora':''})</span>`;
+    msg=`<span style="color:var(--amber)">Quedan ${fmt(diferencia)} pendientes — mora sigue corriendo</span>`;
   }
   document.getElementById('abono-prev').innerHTML=msg;
 }
@@ -2125,9 +2125,10 @@ function confirmarAbono(){
     log({tipo:'abono',cliente:c.nombre,monto,cuota:c.pagadas,total:c.numCuotas,ts:Date.now(),autor:'Admin',nota:msg});
     notify(`${msg} ✓`,'ok');
   } else {
-    // Abono parcial — primero cubre mora de hoy, resto va a cuota
-    const abonoEnMora=Math.min(monto,m);
-    const abonoEnCuota=monto-abonoEnMora;
+    // Abono parcial — el monto completo va a la cuota (capital+interés)
+    // La mora NO se descuenta del abono parcial; sigue corriendo hasta pago completo
+    const abonoEnMora=0;
+    const abonoEnCuota=monto;
     if(abonoEnMora>0){
       registrarEventoMora(c,'cobrada',abonoEnMora,`Mora parcial en abono — cuota ${c.pagadas+1}/${c.numCuotas}`,'Admin');
       c.moraPerdonada=(c.moraPerdonada||0)+abonoEnMora;
